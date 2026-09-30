@@ -1,0 +1,22 @@
+{
+  "contacts": [
+    {
+      "id": "card",
+      "label": "Contact card",
+      "labelKey": "markdown.examples.card",
+      "code": "target: Steve Wozniak\nstyle: card"
+    },
+    {
+      "id": "inline",
+      "label": "Inline contact",
+      "labelKey": "markdown.examples.inline",
+      "code": "target: Steve Wozniak\nstyle: inline"
+    },
+    {
+      "id": "details",
+      "label": "Contact details",
+      "labelKey": "markdown.examples.details",
+      "code": "target: Steve Wozniak\nstyle: card\nshow:\n  - phone\n  - email\n  - place\n  - birthdate\n  - profession\n  - organization"
+    }
+  ]
+}

@@ -1,0 +1,154 @@
+{
+  "icon": "icon.svg",
+  "main": "runtime/index.js",
+  "keepTabIcon": true,
+  "indexState": "scoped",
+  "uiSlots": {
+    "left_sidebar": "contacts.panel",
+    "main_workspace": "contacts.page"
+  },
+  "slotDefaults": {
+    "left_sidebar": {
+      "order": 40
+    }
+  },
+  "fileViews": {
+    ".vcf": {
+      "view": "contacts.file",
+      "icon": "contact",
+      "label": "Contact card",
+      "labelKey": "contacts.file.label",
+      "editable": true
+    }
+  },
+  "provides": [
+    {
+      "id": "agent.toolProvider",
+      "kind": "service",
+      "version": "1.0.0"
+    },
+    {
+      "id": "calendar.itemSource",
+      "kind": "service",
+      "version": "2.0.0"
+    },
+    {
+      "id": "calendar.itemSourceRevision",
+      "kind": "state",
+      "version": "1.0.0"
+    },
+    {
+      "id": "contacts.directory",
+      "kind": "service",
+      "version": "1.0.0"
+    },
+    {
+      "id": "contacts.directoryRevision",
+      "kind": "state",
+      "version": "1.0.0"
+    },
+    {
+      "id": "workspace.surface",
+      "kind": "extension",
+      "version": "1.0.0"
+    },
+    {
+      "id": "workspace.details",
+      "kind": "extension",
+      "version": "1.0.0"
+    },
+    {
+      "id": "workspace.bookmark",
+      "kind": "service",
+      "version": "1.0.0"
+    }
+  ],
+  "consumes": [
+    {
+      "id": "geo.navigator",
+      "kind": "service",
+      "range": "^1.0.0",
+      "optional": true
+    }
+  ],
+  "settingsView": "contacts.settings",
+  "settingsSchema": {
+    "fields": [
+      {
+        "key": "contactsRoot",
+        "label": "Contacts folder",
+        "labelKey": "plugin.contacts.field.root",
+        "type": "text",
+        "default": "Meadow/Orbit",
+        "description": "Vault-relative folder scanned for contact cards (one .vcf per person).",
+        "descriptionKey": "contacts.settings.rootDescription",
+        "validate": "vault-folder"
+      }
+    ]
+  },
+  "locales": {
+    "en": "runtime/locales/en.json",
+    "de": "runtime/locales/de.json",
+    "es": "runtime/locales/es.json",
+    "fr": "runtime/locales/fr.json",
+    "zh-CN": "runtime/locales/zh-CN.json"
+  },
+  "runtime": {
+    "ui": "runtime/index.js"
+  },
+  "datasets": [
+    {
+      "id": "note_search",
+      "store": "cache",
+      "version": 1,
+      "title": "Contact notes",
+      "titleKey": "contacts.search.notes",
+      "primaryKey": [
+        "path"
+      ],
+      "columns": {
+        "path": {
+          "type": "text"
+        },
+        "name": {
+          "type": "text"
+        },
+        "note": {
+          "type": "text"
+        }
+      }
+    }
+  ],
+  "searchSources": [
+    {
+      "id": "contact-notes",
+      "label": "Contact notes",
+      "labelKey": "contacts.search.notes",
+      "source": "dataset",
+      "dataset": "contacts.note_search",
+      "tagSearch": true,
+      "default": true,
+      "fields": [
+        "name",
+        "note"
+      ],
+      "mode": "keyword",
+      "pathField": "path",
+      "display": [
+        "name",
+        "note"
+      ],
+      "presentation": {
+        "titleField": "name",
+        "subtitleField": "path",
+        "snippetFields": [
+          "note"
+        ],
+        "tagFields": [],
+        "inlineTagFields": [
+          "note"
+        ]
+      }
+    }
+  ]
+}

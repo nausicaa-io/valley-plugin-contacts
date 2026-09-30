@@ -1,0 +1,17 @@
+{
+  "apiVersion": 5,
+  "id": "contacts",
+  "name": "Contacts",
+  "version": "3.0.0",
+  "description": "Address book over vCard files in your vault: ordered groups with colors, cover-aware structured contact cards, typed relations, birthdays in Calendar, and a force-directed relationship graph.",
+  "author": [
+    "nausicaa"
+  ],
+  "authorUrl": [
+    "https://github.com/nausicaa-io"
+  ],
+  "license": "MIT",
+  "minAppVersion": "0.1.0",
+  "isDesktopOnly": true,
+  "enabled": true
+}
