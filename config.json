@@ -83,6 +83,66 @@
         "description": "Vault-relative folder scanned for contact cards (one .vcf per person).",
         "descriptionKey": "contacts.settings.rootDescription",
         "validate": "vault-folder"
+      },
+      {
+        "key": "socials",
+        "label": "Social platforms",
+        "type": "custom",
+        "settingsVisible": false,
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "icon": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "label",
+              "url"
+            ]
+          }
+        }
+      },
+      {
+        "key": "lastOpen",
+        "label": "Last opened contact",
+        "type": "custom",
+        "settingsVisible": false,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "selectedPath": {
+              "type": "union",
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "mode": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "readOnly": true,
+        "description": "Owner-managed runtime state; change it through the owning domain operation."
       }
     ]
   },
@@ -94,7 +154,2097 @@
     "zh-CN": "runtime/locales/zh-CN.json"
   },
   "runtime": {
-    "ui": "runtime/index.js"
+    "ui": "runtime/index.js",
+    "backend": "runtime/backend.js",
+    "services": [
+      {
+        "id": "command.contacts.list",
+        "version": "1.0.0",
+        "method": "command.contacts.list",
+        "operation": true,
+        "request": {
+          "type": "unknown"
+        },
+        "response": {
+          "type": "unknown"
+        },
+        "metadata": {
+          "command": {
+            "id": "contacts.list",
+            "description": "List bounded contact summaries from the configured folder, with pagination and per-file parsing diagnostics.",
+            "effect": "read",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "maxLength": 500,
+                  "default": ""
+                },
+                "offset": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 0
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100,
+                  "default": 50
+                }
+              },
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "contacts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "relPath": {
+                        "type": "string",
+                        "minLength": 5,
+                        "maxLength": 4096,
+                        "pattern": "\\.[vV][cC][fF]$"
+                      },
+                      "fileName": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "displayName": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "firstName": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "lastName": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "nickname": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "groups": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "maxLength": 65536
+                        },
+                        "maxItems": 1000
+                      }
+                    },
+                    "required": [
+                      "relPath",
+                      "fileName",
+                      "displayName",
+                      "firstName",
+                      "lastName",
+                      "nickname",
+                      "groups"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "errors": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string"
+                      },
+                      "message": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "message"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "next": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "contacts",
+                "errors",
+                "next"
+              ],
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            }
+          }
+        }
+      },
+      {
+        "id": "command.contacts.read",
+        "version": "1.0.0",
+        "method": "command.contacts.read",
+        "operation": true,
+        "request": {
+          "type": "unknown"
+        },
+        "response": {
+          "type": "unknown"
+        },
+        "metadata": {
+          "command": {
+            "id": "contacts.read",
+            "description": "Read an authoritative vCard and its observed disk baseline before editing.",
+            "effect": "read",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 5,
+                  "maxLength": 4096,
+                  "pattern": "\\.[vV][cC][fF]$"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "contact": {
+                  "type": "object",
+                  "properties": {
+                    "firstName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "middleName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "lastName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "nickname": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "birthdate": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "cover": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "maxItems": 1000
+                    },
+                    "relations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "to": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "family",
+                              "partner",
+                              "friend",
+                              "school",
+                              "work",
+                              "party",
+                              "military",
+                              "other"
+                            ]
+                          },
+                          "role": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "to",
+                          "type"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "organization": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "title": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "dept": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "email": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "phone": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "place": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "socialMedia": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "platform": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "handle": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "url": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "websites": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "maxItems": 1000
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "maxItems": 1000
+                    },
+                    "lastContact": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "profession": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "note": {
+                      "type": "string",
+                      "maxLength": 2097152
+                    },
+                    "relPath": {
+                      "type": "string",
+                      "minLength": 5,
+                      "maxLength": 4096,
+                      "pattern": "\\.[vV][cC][fF]$"
+                    },
+                    "fileName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "displayName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "uid": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "photo": {
+                      "type": "string",
+                      "maxLength": 4194304
+                    }
+                  },
+                  "required": [
+                    "firstName",
+                    "middleName",
+                    "lastName",
+                    "nickname",
+                    "birthdate",
+                    "cover",
+                    "groups",
+                    "relations",
+                    "organization",
+                    "email",
+                    "phone",
+                    "place",
+                    "socialMedia",
+                    "websites",
+                    "events",
+                    "lastContact",
+                    "profession",
+                    "note",
+                    "relPath",
+                    "fileName",
+                    "displayName",
+                    "uid",
+                    "photo"
+                  ],
+                  "additionalProperties": false
+                },
+                "content": {
+                  "type": "string"
+                },
+                "baseline": {
+                  "type": "object",
+                  "properties": {
+                    "mtimeMs": {
+                      "type": "number"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "hash": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "required": [
+                    "mtimeMs",
+                    "size",
+                    "hash"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "contact",
+                "content",
+                "baseline"
+              ],
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            }
+          }
+        }
+      },
+      {
+        "id": "command.contacts.create",
+        "version": "1.0.0",
+        "method": "command.contacts.create",
+        "operation": true,
+        "request": {
+          "type": "unknown"
+        },
+        "response": {
+          "type": "unknown"
+        },
+        "metadata": {
+          "command": {
+            "id": "contacts.create",
+            "description": "Create a vCard in the configured folder with collision-safe naming. Preserves ordinary contact format.",
+            "effect": "write",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "fields": {
+                  "type": "object",
+                  "properties": {
+                    "firstName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "middleName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "lastName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "nickname": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "birthdate": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "cover": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "maxItems": 1000
+                    },
+                    "relations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "to": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "family",
+                              "partner",
+                              "friend",
+                              "school",
+                              "work",
+                              "party",
+                              "military",
+                              "other"
+                            ]
+                          },
+                          "role": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "to",
+                          "type"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "organization": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "title": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "dept": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "email": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "phone": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "place": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "socialMedia": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "platform": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "handle": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "url": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "websites": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "maxItems": 1000
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "maxItems": 1000
+                    },
+                    "lastContact": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "profession": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "note": {
+                      "type": "string",
+                      "maxLength": 2097152
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "fileName": {
+                  "type": "string",
+                  "maxLength": 500
+                }
+              },
+              "required": [
+                "fields"
+              ],
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "contact": {
+                  "type": "object",
+                  "properties": {
+                    "firstName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "middleName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "lastName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "nickname": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "birthdate": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "cover": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "maxItems": 1000
+                    },
+                    "relations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "to": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "family",
+                              "partner",
+                              "friend",
+                              "school",
+                              "work",
+                              "party",
+                              "military",
+                              "other"
+                            ]
+                          },
+                          "role": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "to",
+                          "type"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "organization": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "title": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "dept": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "email": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "phone": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "place": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "socialMedia": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "platform": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "handle": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "url": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "websites": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "maxItems": 1000
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "maxItems": 1000
+                    },
+                    "lastContact": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "profession": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "note": {
+                      "type": "string",
+                      "maxLength": 2097152
+                    },
+                    "relPath": {
+                      "type": "string",
+                      "minLength": 5,
+                      "maxLength": 4096,
+                      "pattern": "\\.[vV][cC][fF]$"
+                    },
+                    "fileName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "displayName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "uid": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "photo": {
+                      "type": "string",
+                      "maxLength": 4194304
+                    }
+                  },
+                  "required": [
+                    "firstName",
+                    "middleName",
+                    "lastName",
+                    "nickname",
+                    "birthdate",
+                    "cover",
+                    "groups",
+                    "relations",
+                    "organization",
+                    "email",
+                    "phone",
+                    "place",
+                    "socialMedia",
+                    "websites",
+                    "events",
+                    "lastContact",
+                    "profession",
+                    "note",
+                    "relPath",
+                    "fileName",
+                    "displayName",
+                    "uid",
+                    "photo"
+                  ],
+                  "additionalProperties": false
+                },
+                "baseline": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mtimeMs": {
+                          "type": "number"
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "hash": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "required": [
+                        "mtimeMs",
+                        "size",
+                        "hash"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "editorConflict": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "contact",
+                "baseline",
+                "editorConflict"
+              ],
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            }
+          }
+        }
+      },
+      {
+        "id": "command.contacts.update",
+        "version": "1.0.0",
+        "method": "command.contacts.update",
+        "operation": true,
+        "request": {
+          "type": "unknown"
+        },
+        "response": {
+          "type": "unknown"
+        },
+        "metadata": {
+          "command": {
+            "id": "contacts.update",
+            "description": "Update reviewed fields against the observed baseline, preserving unknown vCard properties. Automatic name changes may rename the file and repair links.",
+            "effect": "write",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 5,
+                  "maxLength": 4096,
+                  "pattern": "\\.[vV][cC][fF]$"
+                },
+                "patch": {
+                  "type": "object",
+                  "properties": {
+                    "firstName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "middleName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "lastName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "nickname": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "birthdate": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "cover": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "maxItems": 1000
+                    },
+                    "relations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "to": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "family",
+                              "partner",
+                              "friend",
+                              "school",
+                              "work",
+                              "party",
+                              "military",
+                              "other"
+                            ]
+                          },
+                          "role": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "to",
+                          "type"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "organization": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "title": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "dept": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "email": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "phone": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "place": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "socialMedia": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "platform": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "handle": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "url": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "websites": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "maxItems": 1000
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "maxItems": 1000
+                    },
+                    "lastContact": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "profession": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "note": {
+                      "type": "string",
+                      "maxLength": 2097152
+                    }
+                  },
+                  "additionalProperties": false,
+                  "minProperties": 1
+                },
+                "expected": {
+                  "type": "object",
+                  "properties": {
+                    "mtimeMs": {
+                      "type": "number"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "hash": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "required": [
+                    "mtimeMs",
+                    "size",
+                    "hash"
+                  ],
+                  "additionalProperties": false
+                },
+                "fileName": {
+                  "type": "string",
+                  "maxLength": 500
+                }
+              },
+              "required": [
+                "path",
+                "patch",
+                "expected"
+              ],
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "contact": {
+                  "type": "object",
+                  "properties": {
+                    "firstName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "middleName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "lastName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "nickname": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "birthdate": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "cover": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "maxItems": 1000
+                    },
+                    "relations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "to": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "family",
+                              "partner",
+                              "friend",
+                              "school",
+                              "work",
+                              "party",
+                              "military",
+                              "other"
+                            ]
+                          },
+                          "role": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "to",
+                          "type"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "organization": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "title": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "dept": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "email": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "phone": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "place": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "socialMedia": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "platform": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "handle": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "url": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "websites": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "maxItems": 1000
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "maxItems": 1000
+                    },
+                    "lastContact": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "profession": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "note": {
+                      "type": "string",
+                      "maxLength": 2097152
+                    },
+                    "relPath": {
+                      "type": "string",
+                      "minLength": 5,
+                      "maxLength": 4096,
+                      "pattern": "\\.[vV][cC][fF]$"
+                    },
+                    "fileName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "displayName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "uid": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "photo": {
+                      "type": "string",
+                      "maxLength": 4194304
+                    }
+                  },
+                  "required": [
+                    "firstName",
+                    "middleName",
+                    "lastName",
+                    "nickname",
+                    "birthdate",
+                    "cover",
+                    "groups",
+                    "relations",
+                    "organization",
+                    "email",
+                    "phone",
+                    "place",
+                    "socialMedia",
+                    "websites",
+                    "events",
+                    "lastContact",
+                    "profession",
+                    "note",
+                    "relPath",
+                    "fileName",
+                    "displayName",
+                    "uid",
+                    "photo"
+                  ],
+                  "additionalProperties": false
+                },
+                "baseline": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mtimeMs": {
+                          "type": "number"
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "hash": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "required": [
+                        "mtimeMs",
+                        "size",
+                        "hash"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "editorConflict": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "contact",
+                "baseline",
+                "editorConflict"
+              ],
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            }
+          }
+        }
+      },
+      {
+        "id": "command.contacts.delete",
+        "version": "1.0.0",
+        "method": "command.contacts.delete",
+        "operation": true,
+        "request": {
+          "type": "unknown"
+        },
+        "response": {
+          "type": "unknown"
+        },
+        "metadata": {
+          "command": {
+            "id": "contacts.delete",
+            "description": "Soft-delete the exact reviewed vCard into the configured trash. A vault-trash token can be restored during this backend session.",
+            "effect": "write",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 5,
+                  "maxLength": 4096,
+                  "pattern": "\\.[vV][cC][fF]$"
+                },
+                "expected": {
+                  "type": "object",
+                  "properties": {
+                    "mtimeMs": {
+                      "type": "number"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "hash": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "required": [
+                    "mtimeMs",
+                    "size",
+                    "hash"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "path",
+                "expected"
+              ],
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "destination": {
+                  "type": "string",
+                  "enum": [
+                    "system",
+                    "vault"
+                  ]
+                },
+                "token": {
+                  "type": "string"
+                },
+                "editorConflict": {
+                  "type": "boolean"
+                },
+                "recoverySaved": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "ok",
+                "destination",
+                "editorConflict",
+                "recoverySaved"
+              ],
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            }
+          }
+        }
+      },
+      {
+        "id": "command.contacts.rename",
+        "version": "1.0.0",
+        "method": "command.contacts.rename",
+        "operation": true,
+        "request": {
+          "type": "unknown"
+        },
+        "response": {
+          "type": "unknown"
+        },
+        "metadata": {
+          "command": {
+            "id": "contacts.rename",
+            "description": "Rename the reviewed vCard within its folder with collision-safe naming and link repair.",
+            "effect": "write",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 5,
+                  "maxLength": 4096,
+                  "pattern": "\\.[vV][cC][fF]$"
+                },
+                "fileName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "expected": {
+                  "type": "object",
+                  "properties": {
+                    "mtimeMs": {
+                      "type": "number"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "hash": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "required": [
+                    "mtimeMs",
+                    "size",
+                    "hash"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "path",
+                "fileName",
+                "expected"
+              ],
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "contact": {
+                  "type": "object",
+                  "properties": {
+                    "firstName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "middleName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "lastName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "nickname": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "birthdate": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "cover": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "maxItems": 1000
+                    },
+                    "relations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "to": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "family",
+                              "partner",
+                              "friend",
+                              "school",
+                              "work",
+                              "party",
+                              "military",
+                              "other"
+                            ]
+                          },
+                          "role": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "to",
+                          "type"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "organization": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "title": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "dept": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "email": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "phone": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "place": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "type": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "socialMedia": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "platform": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "handle": {
+                            "type": "string",
+                            "maxLength": 65536
+                          },
+                          "url": {
+                            "type": "string",
+                            "maxLength": 65536
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "maxItems": 1000
+                    },
+                    "websites": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "maxItems": 1000
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "maxItems": 1000
+                    },
+                    "lastContact": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "profession": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "note": {
+                      "type": "string",
+                      "maxLength": 2097152
+                    },
+                    "relPath": {
+                      "type": "string",
+                      "minLength": 5,
+                      "maxLength": 4096,
+                      "pattern": "\\.[vV][cC][fF]$"
+                    },
+                    "fileName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "displayName": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "uid": {
+                      "type": "string",
+                      "maxLength": 65536
+                    },
+                    "photo": {
+                      "type": "string",
+                      "maxLength": 4194304
+                    }
+                  },
+                  "required": [
+                    "firstName",
+                    "middleName",
+                    "lastName",
+                    "nickname",
+                    "birthdate",
+                    "cover",
+                    "groups",
+                    "relations",
+                    "organization",
+                    "email",
+                    "phone",
+                    "place",
+                    "socialMedia",
+                    "websites",
+                    "events",
+                    "lastContact",
+                    "profession",
+                    "note",
+                    "relPath",
+                    "fileName",
+                    "displayName",
+                    "uid",
+                    "photo"
+                  ],
+                  "additionalProperties": false
+                },
+                "baseline": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mtimeMs": {
+                          "type": "number"
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "hash": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "required": [
+                        "mtimeMs",
+                        "size",
+                        "hash"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "editorConflict": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "contact",
+                "baseline",
+                "editorConflict"
+              ],
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            }
+          }
+        }
+      },
+      {
+        "id": "command.contacts.restore",
+        "version": "1.0.0",
+        "method": "command.contacts.restore",
+        "operation": true,
+        "request": {
+          "type": "unknown"
+        },
+        "response": {
+          "type": "unknown"
+        },
+        "metadata": {
+          "command": {
+            "id": "contacts.restore",
+            "description": "Restore a vault-trash token owned by this active backend session, provided the original path remains free.",
+            "effect": "write",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "token"
+              ],
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "restoredPath": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ok",
+                "restoredPath"
+              ],
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            }
+          }
+        }
+      }
+    ]
   },
   "datasets": [
     {
