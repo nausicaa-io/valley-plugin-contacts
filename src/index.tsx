@@ -1,6 +1,6 @@
 /**
  * Contacts — an address book over the vault's vCard files (one `.vcf` per
- * person under the configured folder, default `Meadow/Orbit`). The core index
+ * person under the configured folder, empty by default). The core index
  * lists the files; only changed cards are read. It presents a virtual group
  * tree (ordered `CATEGORIES`, never real folders), a structured contact view
  * with typed relations, and a force-directed relationship graph. Writes,
@@ -32,6 +32,7 @@ import { registerContactDetails } from './contactView'
 import { initializeContactIcons } from './contactIcons'
 import { registerBirthdaySource } from './calendarSource'
 import { registerContactSearch } from './search'
+import { registerContactFileCommands } from './fileViewCommands'
 
 export function register(api: ValleyPluginApi): () => Promise<void> {
   initLocalization(api)
@@ -59,6 +60,7 @@ export function register(api: ValleyPluginApi): () => Promise<void> {
 
   const offDirectory = registerDirectory(api)
   const offCommands = registerContactsCommands(api)
+  const offFileCommands = registerContactFileCommands(api)
   const offSurfaces = registerContactSurfaces(api)
   const offDetails = registerContactDetails(api)
   const offIcons = initializeContactIcons(api)
@@ -73,6 +75,7 @@ export function register(api: ValleyPluginApi): () => Promise<void> {
     const directoryDrain = offDirectory()
     const searchDrain = offSearch()
     offCommands()
+    offFileCommands()
     offSurfaces()
     offBirthdays()
     offDetails()

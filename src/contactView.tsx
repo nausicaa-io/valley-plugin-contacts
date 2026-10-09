@@ -1,11 +1,12 @@
-import { WORKSPACE_DETAILS_V1, type ValleyPluginApi, type WorkspaceDetailsContext } from '@valley/plugin-sdk'
+import { WORKSPACE_DETAILS_V1, type MountedPluginView, type ValleyPluginApi, type WorkspaceDetailsContext } from '@valley/plugin-sdk'
 import { React, api } from './runtime'
 import type { Contact } from './types'
 import { getStore } from './store'
-import { ContactForm } from './ContactForm'
+import { ContactForm, registerContactFileEditor } from './ContactForm'
 import { DetailView } from './DetailView'
 import { formatContactDate } from './util'
 import { uiText } from './localization'
+import { useContactFileActions } from './fileViewCommands'
 
 type Mode = 'reading' | 'editing'
 function state(owner = api) {
@@ -21,9 +22,13 @@ export function setContactMode(path: string, mode: Mode, owner = api): void {
   notify(owner)
 }
 
-export function ContactContent({ contact }: { contact: Contact }) {
+export function ContactContent({ contact, mountedView }: { contact: Contact; mountedView?: MountedPluginView }) {
   const owner = api
   const path = contact.relPath
+  const mountedKey = mountedView ? JSON.stringify([mountedView.mountId, mountedView.generation, mountedView.area, mountedView.paneId, mountedView.tabId, mountedView.filePath, mountedView.pluginId]) : ''
+  const mounted = React.useRef(mountedView)
+  mounted.current = mountedView
+  React.useEffect(() => mounted.current ? registerContactFileEditor(owner, mounted.current) : undefined, [owner, mountedKey])
   const mode = React.useSyncExternalStore(listener => subscribe(listener, owner), () => state(owner).modes.get(path) ?? 'reading')
   const [hasEdited, setHasEdited] = React.useState(mode === 'editing')
   const root = React.useRef<HTMLDivElement>(null)
@@ -34,6 +39,7 @@ export function ContactContent({ contact }: { contact: Contact }) {
   }, [mode])
   React.useEffect(() => { if (mode === 'editing') setHasEdited(true) }, [mode])
   React.useEffect(() => { state(owner).contacts.set(path, contact); notify(owner) }, [owner, path, contact])
+  useContactFileActions(mountedView, 'view', { snapshot: () => ({ mode, displayName: contact.displayName }), actions: { mode: action => { if (action.type === 'mode') setContactMode(path, action.value, owner) } } })
   React.useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || event.repeat || event.altKey || event.shiftKey || !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'e') return
@@ -48,8 +54,8 @@ export function ContactContent({ contact }: { contact: Contact }) {
     return () => window?.removeEventListener('keydown', onKey)
   }, [owner, path, mode])
   return <div ref={root} tabIndex={-1} className="ct-contact-content">
-    {mode === 'reading' && <DetailView contact={contact} />}
-    {(hasEdited || mode === 'editing') && <div hidden={mode !== 'editing'}><ContactForm contact={contact} autosave compact={false} /></div>}
+    {mode === 'reading' && <DetailView contact={contact} mountedView={mountedView} />}
+    {(hasEdited || mode === 'editing') && <div hidden={mode !== 'editing'}><ContactForm contact={contact} mountedView={mountedView} autosave compact={false} /></div>}
   </div>
 }
 

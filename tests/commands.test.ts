@@ -1,3 +1,4 @@
+import Ajv2020 from 'ajv/dist/2020'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PLUGIN_SURFACE_V1 } from '@valley/plugin-sdk'
 import { createMockValleyApi } from '@valley/plugin-testkit'
@@ -6,12 +7,29 @@ import { disposeStore, getStore } from '../src/store'
 import { registerContactsCommands } from '../src/commands'
 import { registerContactSurfaces } from '../src/surfaces'
 import type { Contact } from '../src/types'
-import { cardVault, uidFor } from './cards'
+import { cardAt, cardVault, uidFor } from './cards'
 
-function setup(): ReturnType<typeof createMockValleyApi> {
+function validatePublishedResults(mock: { api: import('@valley/plugin-sdk').ValleyPluginApi }): void {
+  const original = mock.api.commands.register
+  vi.spyOn(mock.api.commands, 'register').mockImplementation(definition => {
+    const schema = (definition as typeof definition & { outputSchema?: Record<string, unknown> }).outputSchema
+    expect(schema, definition.id).toBeDefined()
+    const validate = new Ajv2020({ strict: false, strictSchema: true, allowUnionTypes: true, ownProperties: true, validateFormats: false }).compile(schema!)
+    expect(validate({ unexpected: true }), definition.id).toBe(false)
+    return original({ ...definition, run: async (input, context) => {
+      const result = await definition.run(input, context)
+      const value = definition.sideEffect === 'write' ? (result as { value: unknown }).value : result
+      expect(validate(value), `${definition.id}: ${JSON.stringify(validate.errors)}`).toBe(true)
+      return result
+    } } as typeof definition)
+  })
+}
+
+function setup(extra: Record<string, Partial<Contact>> = {}): ReturnType<typeof createMockValleyApi> {
   const { files, indexEntries } = cardVault({
     'Meadow/Orbit/Fox Woodland.vcf': { firstName: 'Fox', lastName: 'Woodland', groups: ['fungi'], phone: [{ value: '0000000000', type: 'Mobile' }], note: 'Woodland observation' },
-    'Meadow/Orbit/Otter Riverbank.vcf': { firstName: 'Otter', lastName: 'Riverbank', groups: ['plants'], note: 'Woodland observation' }
+    'Meadow/Orbit/Otter Riverbank.vcf': { firstName: 'Otter', lastName: 'Riverbank', groups: ['plants'], note: 'Woodland observation' },
+    ...extra
   })
   const mock = createMockValleyApi({
     manifest: { id: 'contacts' },
@@ -23,6 +41,7 @@ function setup(): ReturnType<typeof createMockValleyApi> {
     indexEntries,
     files
   })
+  validatePublishedResults(mock)
   initRuntime(mock.api)
   registerContactsCommands(mock.api)
   return mock
@@ -338,7 +357,7 @@ describe('contact file names', () => {
 })
 
 describe('contacts:delete', () => {
-  it('soft-deletes and reverts by rewriting the original content', async () => {
+  it('soft-deletes and reverts by restoring the trashed card, consuming its trash entry', async () => {
     const mock = setup()
     const relPath = 'Meadow/Orbit/Otter Riverbank.vcf'
     const before = await mock.api.vault.readFile(relPath)
@@ -346,9 +365,41 @@ describe('contacts:delete', () => {
     const result = await mock.api.commands.execute('contacts:delete', { name: 'Otter Riverbank' })
     expect(result.ok).toBe(true)
     expect(mock.api.vault.trashTextDocumentGuarded).toHaveBeenCalledWith(relPath, expect.any(String))
+    const trashed = await vi.mocked(mock.api.vault.trashTextDocumentGuarded).mock.results[0].value
+    const token = trashed.ok ? trashed.token! : ''
+    expect(token).toBeTruthy()
 
-    await mock.busUndo[0].undo()
+    expect((await mock.busUndo[0].undo()).ok).toBe(true)
+    expect(await mock.api.vault.readFile(relPath)).toBe(before)
+    expect(mock.api.vault.restoreTrashed).toHaveBeenCalledWith(token)
+    expect(mock.api.vault.createTextDocumentGuarded).not.toHaveBeenCalled()
+    // The trash entry the delete created is gone: it cannot be restored a second time.
+    expect(await mock.api.vault.restoreTrashed(token)).toMatchObject({ ok: false, message: 'Trash entry not found' })
+  })
+
+  it('recreates the card when the delete went to the system trash without a vault token', async () => {
+    const mock = setup()
+    const relPath = 'Meadow/Orbit/Otter Riverbank.vcf'
+    const before = await mock.api.vault.readFile(relPath)
+    const trash = vi.mocked(mock.api.vault.trashTextDocumentGuarded).getMockImplementation()!
+    vi.mocked(mock.api.vault.trashTextDocumentGuarded).mockImplementationOnce(async (...args) => {
+      const result = await trash(...args)
+      return result.ok ? { ...result, destination: 'system' as const, token: undefined } : result
+    })
+    expect((await mock.api.commands.execute('contacts:delete', { name: 'Otter Riverbank' })).ok).toBe(true)
+    expect((await mock.busUndo[0].undo()).ok).toBe(true)
+    expect(mock.api.vault.restoreTrashed).not.toHaveBeenCalled()
     expect(writesTo(mock, relPath).at(-1)).toBe(before)
+  })
+
+  it('reports a failed revert when the trash entry cannot be restored', async () => {
+    const mock = setup()
+    const relPath = 'Meadow/Orbit/Otter Riverbank.vcf'
+    expect((await mock.api.commands.execute('contacts:delete', { name: 'Otter Riverbank' })).ok).toBe(true)
+    vi.mocked(mock.api.vault.restoreTrashed).mockResolvedValueOnce({ ok: false, message: 'Trash entry not found' })
+    await expect(mock.busUndo[0].undo()).rejects.toThrow('could not be restored')
+    expect(await mock.api.vault.stat(relPath)).toBeNull()
+    expect(mock.api.vault.createTextDocumentGuarded).not.toHaveBeenCalled()
   })
 
   it('keeps a changed note when deletion loses its captured revision', async () => {
@@ -432,6 +483,19 @@ describe('contacts:add-relation / remove-relation', () => {
 
     const removed = await mock.api.commands.execute('contacts:remove-relation', { name: 'Fox Woodland', to: 'Otter Riverbank' })
     expect((removed as { value: Contact }).value.relations).toEqual([])
+  })
+
+  it('restores the exact card when its only relation is removed and added back', async () => {
+    const path = 'Meadow/Orbit/Badger Hollow.vcf'
+    const fields: Partial<Contact> = { firstName: 'Badger', lastName: 'Hollow', relations: [{ to: uidFor('Meadow/Orbit/Otter Riverbank.vcf'), type: 'friend' }], note: 'Sett survey' }
+    const mock = setup({ [path]: fields })
+    const removed = await mock.api.commands.execute('contacts:remove-relation', { name: 'Badger Hollow', to: 'Otter Riverbank' })
+    expect(removed.ok).toBe(true)
+    expect(lastWrite(mock).content).not.toContain('RELATED')
+
+    const added = await mock.api.commands.execute('contacts:add-relation', { name: 'Badger Hollow', to: 'Otter Riverbank', type: 'friend' })
+    expect(added.ok).toBe(true)
+    expect(writesTo(mock, path).at(-1)).toBe(cardAt(path, fields))
   })
 })
 

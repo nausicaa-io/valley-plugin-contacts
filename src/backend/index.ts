@@ -1,3 +1,4 @@
+import { createWorkflowAdapter } from './workflow'
 import { z } from 'zod'
 import type { PluginBackendApi, PluginBackendOperationContext } from '@valley/plugin-sdk'
 import type { FileBaseline, TextDocumentRead } from '@valley/plugin-sdk/types'
@@ -40,7 +41,7 @@ export const outputSchemas = {
 function conflict(): never { throw Object.assign(new Error('Contact changed; read its current revision before editing'), { code: 'REVISION_CONFLICT', outcome: 'not-applied' }) }
 function rootFor(api: PluginBackendOperationContext['api']): string {
   const value = api.settings.get().contactsRoot
-  const root = typeof value === 'string' && value.trim() ? value.trim().replace(/\/+$/, '') : 'Meadow/Orbit'
+  const root = typeof value === 'string' ? value.trim().replace(/\/+$/, '') : ''
   return root === '.' || root === '/' ? '' : root
 }
 function documentOwner(context: PluginBackendOperationContext) {
@@ -107,6 +108,7 @@ export function handlers(context: PluginBackendOperationContext) {
   }
 }
 export function register(api: PluginBackendApi): () => void {
-  const disposers = Object.keys(inputSchemas).map(method => api.rpc.handleOperation(`command.${method}`, (input, context) => handlers(context)[method as keyof typeof inputSchemas](input)))
-  return () => disposers.forEach(dispose => dispose())
+  const workflow = createWorkflowAdapter(api)
+  const disposers = Object.keys(inputSchemas).map(method => workflow.operation(`command.${method}`, (input, context) => handlers(context)[method as keyof typeof inputSchemas](input)))
+  return () => { workflow.dispose(); disposers.forEach(dispose => dispose()) }
 }

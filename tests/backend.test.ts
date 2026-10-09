@@ -30,12 +30,12 @@ function fixture() {
       restore: vi.fn(async (token: string) => { const item = trash.get(token); if (!item || !check(item.path, null)) return { ok: false }; files.set(item.path, item.content); trash.delete(token); return { ok: true, restoredPath: item.path } })
     },
     index: { observe: vi.fn(async () => ({ read: async ({ offset, limit }: { offset: number; limit: number }) => { const entries = [...files.keys()].filter(path => path.startsWith('People/') && path.endsWith('.vcf')); return { status: 'ready', entries: entries.slice(offset, offset + limit).map(relPath => ({ relPath })), next: entries.length > offset + limit ? offset + limit : null } }, dispose: vi.fn() })) },
-    rpc: { handleOperation: (name: string, handler: Parameters<PluginBackendApi['rpc']['handleOperation']>[1]) => { registrations.set(name, handler); return () => registrations.delete(name) } }
+    rpc: { handle: () => () => {}, handleOperation: (name: string, handler: Parameters<PluginBackendApi['rpc']['handleOperation']>[1]) => { registrations.set(name, handler); return () => registrations.delete(name) } }
   }
   register(api as unknown as PluginBackendApi)
   const context = { api, cancellation: { throwIfAborted: () => controller.signal.throwIfAborted(), get aborted() { return controller.signal.aborted }, onCancel: () => () => {} } } as unknown as PluginBackendOperationContext
   const call = async (name: string, input: unknown): Promise<any> => {
-    const descriptor = config.runtime.services.find(service => service.metadata.command.id === name)!.metadata.command
+    const descriptor = config.runtime.services.find(service => service.metadata?.command?.id === name)!.metadata!.command!
     const ajv = new Ajv({ strictSchema: true, strictTypes: false, ownProperties: true })
     const validateInput = ajv.compile(descriptor.inputSchema), validateOutput = ajv.compile(descriptor.outputSchema)
     expect(validateInput(input), JSON.stringify(validateInput.errors)).toBe(true)
@@ -47,13 +47,22 @@ function fixture() {
 }
 
 it('registers concrete input and output contracts for every supported data operation', () => {
-  const descriptors = config.runtime.services.map(service => service.metadata.command)
+  const descriptors = config.runtime.services.flatMap(service => service.metadata?.command ? [service.metadata.command] : [])
   expect(descriptors).toHaveLength(7)
   for (const descriptor of descriptors) {
     expect(descriptor.inputSchema.type).toBe('object')
     expect(descriptor.outputSchema.type).toBe('object')
     expect(Object.keys(descriptor.outputSchema.properties).length).toBeGreaterThan(0)
   }
+})
+
+it('keeps an empty folder in backend reads and creates cards at the vault root', async () => {
+  const f = fixture()
+  vi.spyOn(f.api.settings, 'get').mockReturnValue({ contactsRoot: '' })
+  await f.call('contacts.list', { limit: 1 })
+  expect(f.api.index.observe).toHaveBeenCalledWith({ extensions: ['.vcf'], fields: [] }, expect.any(Function))
+  const created = await f.call('contacts.create', { fields: { firstName: 'Fern' } })
+  expect(created.contact.relPath).toBe('Fern.vcf')
 })
 
 it('reads paginated summaries and creates, updates, renames, deletes and restores exact vCards', async () => {

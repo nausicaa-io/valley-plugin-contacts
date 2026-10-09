@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import type { MountedPluginView } from '@valley/plugin-sdk'
 import { React, api } from './runtime'
 import type { Contact } from './types'
 import { useContacts } from './store'
@@ -33,13 +34,13 @@ export function useContactFile(path: string): { contact: Contact | null; loaded:
 }
 
 /** A `.vcf` file opened from the file tree or a link. */
-export function ContactFileView({ relPath }: { relPath: string }): ReactElement | null {
+export function ContactFileView({ relPath, mountedView }: { relPath: string; mountedView?: MountedPluginView }): ReactElement | null {
   const { contact, loaded } = useContactFile(relPath)
   if (!loaded) return null
   if (!contact) return <div className="ct-empty" style={{ padding: '40px 26px' }}>{uiText('contacts.error.notVCard')}</div>
   return (
     <div className="ct-page ct-file-page">
-      <div className="ct-page-body"><ContactContent key={relPath} contact={contact} /></div>
+      <div className="ct-page-body"><ContactContent key={relPath} contact={contact} mountedView={mountedView} /></div>
     </div>
   )
 }

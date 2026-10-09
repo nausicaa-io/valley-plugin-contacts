@@ -7,7 +7,7 @@ import {
   groupColorFor as sharedGroupColorFor,
   normalizeGroups
 } from '@valley/plugin-sdk/groups'
-import type { PluginIndexEntry } from '@valley/plugin-sdk'
+import type { MountedPluginView, PluginIndexEntry } from '@valley/plugin-sdk'
 import { getContactIndex } from './indexOwner'
 import type { ValleyPluginApi } from '@valley/plugin-sdk'
 import type { TextDocumentRead } from '@valley/plugin-sdk/types'
@@ -55,13 +55,9 @@ function normalizeSocialLinks(value: unknown): SocialLink[] {
   return out
 }
 
-/** Read the plugin settings with sane fallbacks. `/` or `.` scopes contacts to
- *  the whole vault — a flat vault keeps its people at the root, where no folder
- *  prefix can select them and `type: contact` does the work instead. An unset
- *  root still falls back to the default folder. */
 export function getSettings(owner = api): ContactsSettings {
   const s = owner.settings.get()
-  const root = typeof s.contactsRoot === 'string' && s.contactsRoot.trim() ? s.contactsRoot.trim() : 'Meadow/Orbit'
+  const root = typeof s.contactsRoot === 'string' ? s.contactsRoot.trim() : ''
   const scoped = root === '/' || root === '.' ? '' : root.replace(/\/+$/, '')
   const socials = normalizeSocialLinks(s.socials)
   return {
@@ -377,14 +373,31 @@ export function relationTarget(name: string, contacts: Contact[]): string {
   return contact?.uid || trimmed
 }
 
-function documentOwner(owner: ValleyPluginApi): documents.ContactDocumentOwner {
+type ContactEditorSave = ({ view: MountedPluginView } | { path: string; instanceId: string }) & { revision: string; committed(): void }
+
+function documentOwner(owner: ValleyPluginApi, editor?: ContactEditorSave, validateBeforeEffect?: (paths: string[]) => Promise<void>): documents.ContactDocumentOwner {
   const index = getContactIndex(owner)
-  return { root: () => getSettings(owner).contactsRoot, assertCurrent: index.assertCurrent, vault: owner.vault }
+  return { root: () => getSettings(owner).contactsRoot, assertCurrent: index.assertCurrent, vault: owner.vault, validateBeforeEffect,
+    ...(editor ? { saveEditor: async (path: string, content: string, before: TextDocumentRead) => {
+      index.assertCurrent()
+      const disk = await owner.vault.readFileBaseline(path)
+      index.assertCurrent()
+      if (!disk?.baseline || disk.content !== before.content) return { ok: false as const, reason: 'stale' as const }
+      await validateBeforeEffect?.([path])
+      const written = 'view' in editor
+        ? await owner.vault.editors.save(editor.view, content, disk.baseline, editor.revision)
+        : await owner.vault.editors.saveDocument(path, editor.instanceId, content, disk.baseline, editor.revision)
+      if (!written.ok) return { ok: false as const, reason: written.reason }
+      editor.committed()
+      const fresh = await owner.vault.readTextDocument(path).catch(() => null)
+      index.assertCurrent()
+      return { ok: true as const, revisionToken: fresh?.content === content ? fresh.revisionToken : null, editorConflict: false }
+    } } : {}) }
 }
 export const uniqueContactPath = (base: string, options: { dir?: string; ignore?: string } = {}, owner = api) => documents.uniqueContactPath(base, options, documentOwner(owner))
 export const renameContactFile = (path: string, base: string, document: TextDocumentRead, owner = api) => documents.renameContactFile(path, base, document, documentOwner(owner))
 export const readContactDocument = (path: string, owner = api) => documents.readContactDocument(path, documentOwner(owner))
-export const saveContact = (contact: Contact, options: documents.SaveContactOptions = {}, owner = api) => documents.saveContact(contact, options, documentOwner(owner))
+export const saveContact = (contact: Contact, options: documents.SaveContactOptions = {}, owner = api, editor?: ContactEditorSave, validateBeforeEffect?: (paths: string[]) => Promise<void>) => documents.saveContact(contact, options, documentOwner(owner, editor, validateBeforeEffect))
 export const deleteContact = (path: string, owner = api, document?: TextDocumentRead) => documents.deleteContact(path, documentOwner(owner), document)
 export { sanitizeFileName, contactFileBase, contactTrashWarning, UNTITLED_FILE_BASE } from './contactDocuments'
 export type { SaveContactOptions, ContactSave } from './contactDocuments'

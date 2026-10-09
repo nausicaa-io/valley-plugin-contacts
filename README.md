@@ -4,7 +4,7 @@ Address book over vCard files in your vault: ordered groups with colors, cover-a
 
 ## Contact files
 
-Each person is one `.vcf` file (vCard 4.0, RFC 6350) in the Contacts folder (setting `contactsRoot`, default `Meadow/Orbit`; `/` scans the whole vault). Cards exported by other address books (vCard 2.1, 3.0 and 4.0) are read as they are. Opening a `.vcf` shows the contact. Command-E (Ctrl-E on Windows/Linux) switches between Reading and a full structured Editing view. Footer details offers the same mode switch and configurable name, groups, birthday, email, phone, organization, profession, nickname, address, and website fields. Contact editing stays in the main view; the right sidebar has no Contact editing tab. Edits autosave with guarded writes, and switching to Reading keeps pending saves alive.
+Each person is one `.vcf` file (vCard 4.0, RFC 6350) in the Contacts folder (setting `contactsRoot`, empty by default; an empty value or `/` scans the whole vault). Cards exported by other address books (vCard 2.1, 3.0 and 4.0) are read as they are. Opening a `.vcf` shows the contact. Command-E (Ctrl-E on Windows/Linux) switches between Reading and a full structured Editing view. Footer details offers the same mode switch and configurable name, groups, birthday, email, phone, organization, profession, nickname, address, and website fields. Contact editing stays in the main view; the right sidebar has no Contact editing tab. Edits autosave with guarded writes, and switching to Reading keeps pending saves alive.
 
 - Names, nickname, birthday (`BDAY`, with or without a year), groups (`CATEGORIES`), phone, email, addresses (`ADR` with `LABEL`), organizations (`ORG`/`TITLE`), profession (`ROLE`), websites, social profiles (`SOCIALPROFILE`) and Markdown notes (`NOTE`) use standard properties.
 - Relations are `RELATED` entries pointing at the other card's `UID`, so renaming a file never breaks them. Cover image, events and last contact use `X-VALLEY-*` properties.
@@ -55,3 +55,9 @@ npm run check
 The check validates types and package boundaries, runs the package tests, and rebuilds `runtime/`. It requires no Valley source checkout. Keep the rebuilt runtime, locale files, dependency lock, and vendored tools with each release. Increment the package and manifest versions together.
 
 Valley release maintainers explicitly import the compiled artifact into the application’s `plugins.lock.json`; building Valley does not build or read this repository. All privileged work uses declared SDK capabilities, authenticated IPC, and explicit grants. Disabling or unloading the plugin releases its subscriptions and resources.
+
+## Workflow integration
+
+The backend explicitly registers its supported blocks through `registerWorkflowContribution`. Workflow calls the owning operations with their original authentication, cancellation, grants, revisions, and receipts. The catalogue publishes Draft-07 parameter and port contracts; credential administration and approval bypasses are excluded. Workflow availability is configured separately in Workflow → Plugins. Existing account, connection, and profile settings remain owned by this plugin.
+
+Workflow output collections are explicit: `contacts.list` → `$.contacts`. Selectors are relative to each execution item’s `json`. Contact listing deliberately selects contacts; parse errors remain diagnostic metadata. Contact groups, relations, addresses and other nested arrays remain attributes of one card.

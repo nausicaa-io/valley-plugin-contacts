@@ -1,6 +1,6 @@
 import { uiText } from './localization'
 import type { ValleyPluginApi } from '@valley/plugin-sdk'
-import type { GuardedTextDocumentTrashResult, TextDocumentRead } from '@valley/plugin-sdk/types'
+import type { GuardedTextDocumentResult, GuardedTextDocumentTrashResult, TextDocumentRead } from '@valley/plugin-sdk/types'
 import type { Contact } from './types'
 import { buildContactFile, CONTACT_EXTENSION, parseContactFile, updateContactFile } from './schema'
 
@@ -9,6 +9,8 @@ export interface ContactDocumentOwner {
   root(): string
   assertCurrent(): void
   vault: Pick<ValleyPluginApi['vault'], 'stat' | 'readTextDocument' | 'writeTextDocumentGuarded' | 'createTextDocumentGuarded' | 'renameTextDocumentGuarded' | 'trashTextDocumentGuarded'>
+  saveEditor?(path: string, content: string, before: TextDocumentRead): Promise<GuardedTextDocumentResult>
+  validateBeforeEffect?(paths: string[]): Promise<void>
 }
 
 export function sanitizeFileName(name: string): string {
@@ -78,6 +80,7 @@ export async function renameContactFile(relPath: string, targetBase: string, doc
     const fresh = await owner.vault.readTextDocument(path).catch(() => null)
     return fresh && fresh.content === document.content ? fresh : null
   }
+  await owner.validateBeforeEffect?.([relPath, newRelPath])
   const result = await owner.vault.renameTextDocumentGuarded(relPath, newRelPath, document.revisionToken)
   if (!result.ok) {
     console.warn(`[contacts] Could not rename ${relPath} → ${newRelPath}: ${result.reason}`)
@@ -140,8 +143,9 @@ export async function saveContact(
   const content = before
     ? updateContactFile(accepted, previous ?? accepted, before.content)
     : buildContactFile({ ...accepted, relPath })
+  await owner.validateBeforeEffect?.([relPath])
   const written = before
-    ? content === before.content
+    ? owner.saveEditor ? await owner.saveEditor(relPath, content, before) : content === before.content
       ? { ok: true as const, revisionToken: before.revisionToken, editorConflict: false }
       : await owner.vault.writeTextDocumentGuarded(relPath, content, before.revisionToken)
     : await owner.vault.createTextDocumentGuarded(relPath, content)
@@ -151,7 +155,9 @@ export async function saveContact(
   const target = accepted.relPath && !editorConflict && document ? renameTargetFor(accepted, relPath, { previous, fileName }) : null
   let savedPath = relPath
   if (target && document) {
-    const renamed = await renameContactFile(relPath, target, document, owner)
+    let renamed: Awaited<ReturnType<typeof renameContactFile>>
+    try { renamed = await renameContactFile(relPath, target, document, owner) }
+    catch (cause) { if (owner.validateBeforeEffect && cause && typeof cause === 'object') Object.assign(cause, { outcome: 'unknown', outcomeUnknown: true, retryable: false }); throw cause }
     savedPath = renamed.relPath
     document = renamed.document
   }

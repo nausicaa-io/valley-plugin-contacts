@@ -11,6 +11,10 @@ import { formatContactBirthdate, initials } from './util'
 import { resolveSocial } from './social'
 import { Building, Cake, Link, Mail, MapPin, Phone, Plus, X } from './icons'
 import { uiText } from './localization'
+import type { MountedPluginView } from '@valley/plugin-sdk'
+import type { TextDocumentRead } from '@valley/plugin-sdk/types'
+import { readContactDocument } from './data'
+import { useContactFileActions, type ContactFileActionContext } from './fileViewCommands'
 
 /** The card's Markdown notes, rendered by the host like a note's reading view. */
 function ContactNotes({ contact }: { contact: Contact }): ReactElement {
@@ -24,7 +28,7 @@ export function avatarSource(contact: Contact, coverPath: string | null | undefi
 }
 
 /** Read-only structured view of a contact, with inline group chips. */
-export function DetailView({ contact }: { contact: Contact }): ReactElement {
+export function DetailView({ contact, mountedView }: { contact: Contact; mountedView?: MountedPluginView }): ReactElement {
   useContactIcons()
   const store = getStore(api)
   const snap = store.getSnapshot()
@@ -40,12 +44,18 @@ export function DetailView({ contact }: { contact: Contact }): ReactElement {
   const avatarAccent = paletteCssValue(groupColorFor(groups[0], snap.groupConfigs))
   const dateFormat = api.getState().dateFormat
   const socialLinks = getSocialLinks()
+  const [documentRevision, setDocumentRevision] = React.useState<TextDocumentRead | null>(null)
+  const liveReading = React.useRef({ groups, savingGroups, documentRevision })
+  liveReading.current = { groups, savingGroups, documentRevision }
+  React.useEffect(() => { let active = true; liveReading.current.documentRevision = null; setDocumentRevision(null); void readContactDocument(contact.relPath).then(document => { if (active) { liveReading.current.documentRevision = document; setDocumentRevision(document) } }, () => {}); return () => { active = false } }, [contact])
 
   const openAddress = (address: string): void => {
     void api.links.open({ category: 'location', value: address })
   }
 
   React.useEffect(() => {
+    liveReading.current.groups = JSON.parse(contactGroupsKey)
+    liveReading.current.savingGroups = false
     setGroups(JSON.parse(contactGroupsKey))
     setAddingChip(false)
     setChipValue('')
@@ -73,23 +83,29 @@ export function DetailView({ contact }: { contact: Contact }): ReactElement {
     return { borderColor: color, color, background: paletteCssAlpha(stored, 13) }
   }
 
-  const persistGroups = (nextGroups: string[]): void => {
+  const persistGroups = async (nextGroups: string[], commandContext?: ContactFileActionContext): Promise<void> => {
     const previousGroups = groups
     const saveSeq = ++saveSeqRef.current
+    liveReading.current.groups = nextGroups
+    liveReading.current.savingGroups = true
     setGroups(nextGroups)
     setSavingGroups(true)
-    void saveContact({ ...contact, groups: nextGroups }, { previous: contact }).then((saved) => {
-      if ((!saved || saved.editorConflict) && saveSeqRef.current === saveSeq) setGroups(previousGroups)
-    }).catch(() => {
-      if (saveSeqRef.current === saveSeq) setGroups(previousGroups)
-    }).finally(() => {
-      if (saveSeqRef.current === saveSeq) setSavingGroups(false)
-    })
+    try {
+      if (commandContext && !documentRevision) throw Object.assign(new Error('The reading Contact revision is unavailable.'), { outcome: 'not-applied' })
+      const saved = await saveContact({ ...contact, groups: nextGroups }, { previous: contact, ...(commandContext ? { document: documentRevision! } : {}) }, api, undefined, commandContext ? paths => commandContext.validate(paths.map(path => ({ kind: 'file' as const, path, fileOperation: 'write' as const }))) : undefined)
+      if (!saved || saved.editorConflict) throw new Error('The reading Contact group save was not confirmed.')
+      if (saveSeqRef.current === saveSeq) { liveReading.current.documentRevision = saved.document; setDocumentRevision(saved.document) }
+    } catch (cause) {
+      if (saveSeqRef.current === saveSeq) { liveReading.current.groups = previousGroups; setGroups(previousGroups) }
+      if (commandContext) throw cause
+    } finally {
+      if (saveSeqRef.current === saveSeq) { liveReading.current.savingGroups = false; setSavingGroups(false) }
+    }
   }
 
   const removeGroup = (group: string): void => {
     const key = normalizeGroupName(group)
-    persistGroups(groups.filter((g) => normalizeGroupName(g) !== key))
+    void persistGroups(groups.filter((g) => normalizeGroupName(g) !== key))
   }
 
   const closeAddGroup = (): void => {
@@ -103,7 +119,7 @@ export function DetailView({ contact }: { contact: Contact }): ReactElement {
     const next = knownGroups.find((group) => normalizeGroupName(group) === key)
     closeAddGroup()
     if (!next || groups.some((group) => normalizeGroupName(group) === key)) return
-    persistGroups([...groups, next])
+    void persistGroups([...groups, next])
   }
 
   const currentGroups = new Set(groups.map((g) => normalizeGroupName(g)))
@@ -114,6 +130,23 @@ export function DetailView({ contact }: { contact: Contact }): ReactElement {
     .filter((g) => !groupQuery || normalizeGroupName(g).includes(groupQuery))
     .slice(0, 7)
   const optionCount = suggestedGroups.length
+  useContactFileActions(mountedView, 'reader', {
+    snapshot: () => ({ groups: liveReading.current.groups, savingGroups: liveReading.current.savingGroups, phone: contact.phone, email: contact.email, place: contact.place, websites: contact.websites, social: contact.socialMedia, relations: contact.relations, documentRevision: liveReading.current.documentRevision?.revisionToken ?? null }),
+    actions: {
+      'reading-group-add': async (action, context) => { if (action.type === 'reading-group-add') { const next = knownGroups.find(value => normalizeGroupName(value) === normalizeGroupName(action.value)); if (savingGroups || !next) throw Object.assign(new Error('This reading Contact group is unavailable.'), { outcome: 'not-applied' }); await persistGroups([...groups, next], context) } },
+      'reading-group-remove': async (action, context) => { if (action.type === 'reading-group-remove') { if (savingGroups || !groups.includes(action.value)) throw Object.assign(new Error('This exact reading Contact group is unavailable.'), { outcome: 'not-applied' }); await persistGroups(groups.filter(value => value !== action.value), context) } },
+      'link-open': async (action, context) => {
+        if (action.type !== 'link-open') return
+        const i = action.index
+        if (action.kind === 'relation') { const relation = contact.relations[i], path = relation ? resolveRelation(relation.to, snap.contacts)?.relPath : undefined; if (!path) throw Object.assign(new Error('This related Contact target is unavailable.'), { outcome: 'not-applied' }); await context.validate([{ kind: 'file', path, fileOperation: 'read' }]); store.openContact(path); return }
+        const value = action.kind === 'phone' ? contact.phone[i]?.value : action.kind === 'email' ? contact.email[i]?.value : action.kind === 'website' ? contact.websites[i] : action.kind === 'address' ? contact.place[i]?.value : contact.socialMedia[i] ? resolveSocial(contact.socialMedia[i], socialLinks).href : null
+        if (!value) throw Object.assign(new Error('This exact reading Contact link is unavailable.'), { outcome: 'not-applied' })
+        await context.validate([])
+        await api.links.open(action.kind === 'address' ? { category: 'location', value } : action.kind === 'phone' ? `tel:${value}` : action.kind === 'email' ? `mailto:${value}` : value)
+      },
+      settings: async (_action, context) => { await context.validate([]); await api.workspace.openSettings('groups') }
+    }
+  })
 
   React.useEffect(() => {
     setHighlightedGroup(0)

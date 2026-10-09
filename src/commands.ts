@@ -33,6 +33,284 @@ import { searchHaystack } from './util'
 import { getStore, loadContacts } from './store'
 import { groupForName } from '@valley/plugin-sdk/groups'
 
+const contactsResult = {
+  "type": "object",
+  "properties": {
+    "firstName": {
+      "type": "string",
+      "maxLength": 65536
+    },
+    "middleName": {
+      "type": "string",
+      "maxLength": 65536
+    },
+    "lastName": {
+      "type": "string",
+      "maxLength": 65536
+    },
+    "nickname": {
+      "type": "string",
+      "maxLength": 65536
+    },
+    "birthdate": {
+      "type": "string",
+      "maxLength": 65536
+    },
+    "cover": {
+      "type": "string",
+      "maxLength": 65536
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 65536
+      },
+      "maxItems": 1000
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "family",
+              "partner",
+              "friend",
+              "school",
+              "work",
+              "party",
+              "military",
+              "other"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "maxLength": 65536
+          }
+        },
+        "required": [
+          "to",
+          "type"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 1000
+    },
+    "organization": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "dept": {
+            "type": "string",
+            "maxLength": 65536
+          }
+        },
+        "additionalProperties": false
+      },
+      "maxItems": 1000
+    },
+    "email": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "type": {
+            "type": "string",
+            "maxLength": 65536
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 1000
+    },
+    "phone": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "type": {
+            "type": "string",
+            "maxLength": 65536
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 1000
+    },
+    "place": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "type": {
+            "type": "string",
+            "maxLength": 65536
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 1000
+    },
+    "socialMedia": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "handle": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 65536
+          }
+        },
+        "additionalProperties": false
+      },
+      "maxItems": 1000
+    },
+    "websites": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 65536
+      },
+      "maxItems": 1000
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 65536
+      },
+      "maxItems": 1000
+    },
+    "lastContact": {
+      "type": "string",
+      "maxLength": 65536
+    },
+    "profession": {
+      "type": "string",
+      "maxLength": 65536
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 2097152
+    },
+    "relPath": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 4096,
+      "pattern": "\\.[vV][cC][fF]$"
+    },
+    "fileName": {
+      "type": "string",
+      "maxLength": 65536
+    },
+    "displayName": {
+      "type": "string",
+      "maxLength": 65536
+    },
+    "uid": {
+      "type": "string",
+      "maxLength": 65536
+    },
+    "photo": {
+      "type": "string",
+      "maxLength": 4194304
+    }
+  },
+  "required": [
+    "firstName",
+    "middleName",
+    "lastName",
+    "nickname",
+    "birthdate",
+    "cover",
+    "groups",
+    "relations",
+    "organization",
+    "email",
+    "phone",
+    "place",
+    "socialMedia",
+    "websites",
+    "events",
+    "lastContact",
+    "profession",
+    "note",
+    "relPath",
+    "fileName",
+    "displayName",
+    "uid",
+    "photo"
+  ],
+  "additionalProperties": false
+}
+
+export const contactsResults: Record<string, Record<string, unknown>> = {
+  "open": contactsResult,
+  "get": contactsResult,
+  "edit-fields": contactsResult,
+  "create": contactsResult,
+  "update": contactsResult,
+  "add-phone": contactsResult,
+  "remove-phone": contactsResult,
+  "add-email": contactsResult,
+  "remove-email": contactsResult,
+  "add-group": contactsResult,
+  "remove-group": contactsResult,
+  "add-relation": contactsResult,
+  "remove-relation": contactsResult,
+  "open-page": {"type":"null"},
+  "open-graph": {"type":"null"},
+  "new-contact": {"type":"null"},
+  "list": { type: 'array', items: contactsResult, maxItems: 10000 },
+  "note": {"type":"object","properties":{"relPath":{"type":"string","maxLength":65536},"displayName":{"type":"string","maxLength":65536},"note":{"type":"string","maxLength":2097152},"totalChars":{"type":"integer","minimum":0},"truncated":{"type":"boolean"}},"required":["relPath","displayName","note","totalChars","truncated"],"additionalProperties":false},
+  "delete": {"type":"object","properties":{"relPath":{"type":"string","maxLength":65536},"displayName":{"type":"string","maxLength":65536},"warning":{"anyOf":[{"type":"string","maxLength":65536},{"type":"null"}]}},"required":["relPath","displayName","warning"],"additionalProperties":false},
+}
+
 const MAX_NOTE_CHARS = 4000
 
 const asStr = (v: unknown): string => (typeof v === 'string' ? v : v == null ? '' : String(v))
@@ -162,6 +440,7 @@ export function registerContactsCommands(api: ValleyPluginApi): () => void {
   const ready = async (): Promise<void> => { await getStore(api).ready(); index.assertCurrent() }
   const register = <I, O, E extends CommandSideEffect = 'read'>(definition: PluginCommand<I, O, E>): (() => void) => api.commands.register<I, O, E>({
     ...definition,
+    ...({ outputSchema: contactsResults[definition.id] } as { outputSchema: Record<string, unknown> }),
     run: async (input, context) => { await ready(); return definition.run(input, context) },
     ...(definition.preview ? { preview: async (input: I) => { await ready(); return definition.preview!(input) } } : {}),
     ...(definition.revision ? { revision: async (input: I) => { await ready(); return definition.revision!(input) } } : {})
@@ -245,7 +524,7 @@ export function registerContactsCommands(api: ValleyPluginApi): () => void {
       sideEffect: 'read',
       run: () => {
         api.workspace.openMainTab()
-        return undefined
+        return null
       },
       formatCli: () => 'Opened Contacts page.'
     }),
@@ -256,7 +535,7 @@ export function registerContactsCommands(api: ValleyPluginApi): () => void {
       sideEffect: 'read',
       run: () => {
         getStore(api).showGraph({ persist: false })
-        return undefined
+        return null
       },
       formatCli: () => 'Opened the contact relationship graph.'
     }),
@@ -292,7 +571,7 @@ export function registerContactsCommands(api: ValleyPluginApi): () => void {
       run: () => {
         getStore(api).startCreate()
         api.workspace.openMainTab()
-        return undefined
+        return null
       },
       formatCli: () => 'Started a new contact.'
     }),
@@ -505,6 +784,13 @@ export function registerContactsCommands(api: ValleyPluginApi): () => void {
             index.assertCurrent()
             if (restoreAttempted) throw new Error('The contact restore was already attempted.')
             restoreAttempted = true
+            if (removed.token) {
+              // Move the trashed card back so the vault trash entry is consumed and the exact bytes return.
+              const untrashed = await api.vault.restoreTrashed(removed.token)
+              if (!untrashed.ok) throw new Error('The contact path is occupied or could not be restored.')
+              if (untrashed.restoredPath !== undefined && untrashed.restoredPath !== contact.relPath) throw new Error(`The contact was restored to ${untrashed.restoredPath} instead of ${contact.relPath}.`)
+              return
+            }
             const restored = await api.vault.createTextDocumentGuarded(contact.relPath, prior.content)
             if (!restored.ok) throw new Error('The contact path is occupied or could not be restored.')
             if (restored.editorConflict) throw new Error('The contact was restored, but newer editor text remains.')

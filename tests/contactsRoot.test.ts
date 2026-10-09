@@ -52,11 +52,12 @@ describe('contactsRoot scoping', () => {
     warn.mockRestore()
   })
 
-  it('falls back to the default folder when unset', async () => {
+  it.each(['', undefined, '   '])('keeps an unset folder empty (%s)', async (value) => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
-    await install('')
-    expect(getSettings().contactsRoot).toBe('Meadow/Orbit')
+    await install(value)
+    expect(getSettings().contactsRoot).toBe('')
     expect(names()).toContain('Meadow/Orbit/Moss.vcf')
+    expect(names()).toContain('Role - Design Partner.vcf')
     vi.restoreAllMocks()
   })
 

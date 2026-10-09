@@ -1,7 +1,7 @@
 import { useContactIcons } from './contactIcons'
 import type { CSSProperties, ReactElement, ReactNode } from 'react'
 import { React, api as runtimeApi } from './runtime'
-import type { ValleyPluginApi } from '@valley/plugin-sdk'
+import type { MountedPluginView, PluginEditorProvider, ValleyPluginApi } from '@valley/plugin-sdk'
 import type { TextDocumentRead } from '@valley/plugin-sdk/types'
 import type { Contact, ContactMethod, Organization, RelationType, Social, SocialLink } from './types'
 import { RELATION_TYPES } from './types'
@@ -15,6 +15,7 @@ import { canonicalPlatform, iconForPlatform, resolveSocial } from './social'
 import { getSocialLinks } from './data'
 import { dateFormatPlaceholder, formatContactDate, parseContactDateInput } from './util'
 import { uiText } from './localization'
+import { useContactFileActions, type ContactFileActionContext } from './fileViewCommands'
 
 const BLANK: Contact = emptyContact()
 
@@ -22,7 +23,7 @@ const BLANK: Contact = emptyContact()
 interface RelDraft { toName: string; ref: string; label: string; type: RelationType; role: string }
 
 /** Draft keys that are bookkeeping, not contact edits. */
-const DRAFT_STATE = new Set(['sourceContact', 'expectedDocument', 'ready', 'saving', 'error', 'revision', 'savedRevision', 'fileNameEdited'])
+const DRAFT_STATE = new Set(['sourceContact', 'expectedDocument', 'ready', 'saving', 'error', 'revision', 'savedRevision', 'committedRevision', 'fileNameEdited'])
 
 /** A social row while it is being edited. Reordering needs an id that survives
  *  the move, and a `Social` has none — two blank rows are indistinguishable. */
@@ -42,6 +43,7 @@ export interface ContactFormHandle {
 
 interface ContactFormProps {
   contact: Contact | null
+  mountedView?: MountedPluginView
   /** Save each change shortly after typing stops. */
   autosave?: boolean
   compact?: boolean
@@ -54,19 +56,24 @@ interface ContactFormProps {
 interface ContactDraft {
   fields: Map<string, unknown>
   listeners: Set<() => void>
+  identity: string
+  fences: number
+  mounts: Set<string>
+  owners: Map<string, { view: MountedPluginView } | { path: string; instanceId: string }>
+  ownerMountId?: string | null
 }
 
 function contactDraft(api: ValleyPluginApi, key: string): ContactDraft {
   const drafts = api.runtime.getOrCreate('contacts.formDrafts', () => new Map<string, ContactDraft>())
   let draft = drafts.get(key)
   if (!draft) {
-    draft = { fields: new Map(), listeners: new Set() }
+    draft = { fields: new Map(), listeners: new Set(), identity: crypto.randomUUID(), fences: 0, mounts: new Set(), owners: new Map() }
     drafts.set(key, draft)
   }
   return draft
 }
 
-function useContactField<T>(api: ValleyPluginApi, key: string, field: string, initial: T | (() => T)): [T, React.Dispatch<React.SetStateAction<T>>] {
+function useContactField<T>(api: ValleyPluginApi, key: string, field: string, initial: T | (() => T), ownerId?: string): [T, React.Dispatch<React.SetStateAction<T>>] {
   const draft = contactDraft(api, key)
   const initialRef = React.useRef(initial)
   initialRef.current = initial
@@ -86,13 +93,16 @@ function useContactField<T>(api: ValleyPluginApi, key: string, field: string, in
     read
   )
   const setValue = React.useCallback((next: React.SetStateAction<T>) => {
+    if (ownerId && key !== '__new__' && !draft.mounts.has(ownerId)) return
+    if (draft.fences && !DRAFT_STATE.has(field)) return
     draft.fields.set(field, typeof next === 'function' ? (next as (previous: T) => T)(read()) : next)
     if (!DRAFT_STATE.has(field)) {
+      if (draft.ownerMountId === undefined || draft.ownerMountId !== null && !draft.mounts.has(draft.ownerMountId)) draft.ownerMountId = ownerId ?? null
       draft.fields.set(`changed:${field}`, true)
       draft.fields.set('revision', ((draft.fields.get('revision') as number | undefined) ?? 0) + 1)
     }
     for (const listener of draft.listeners) listener()
-  }, [draft, field, read])
+  }, [draft, field, read, ownerId, key])
   return [value, setValue]
 }
 
@@ -103,9 +113,45 @@ function forgetContactDraft(api: ValleyPluginApi, key: string): void {
 
 function clearContactDraft(api: ValleyPluginApi, key: string): void {
   const draft = contactDraft(api, key)
+  if (draft.fences) return
   draft.fields.clear()
+  draft.ownerMountId = undefined
   for (const listener of draft.listeners) listener()
 }
+
+function registerContactEditor(owner: ValleyPluginApi, path: string, instanceId: string, target: { view: MountedPluginView } | { path: string; instanceId: string }, register: (provider: PluginEditorProvider) => () => void): () => void {
+  const draft = contactDraft(owner, path)
+  let active = true
+  draft.mounts.add(instanceId)
+  draft.owners.set(instanceId, target)
+  if (draft.ownerMountId && !draft.mounts.has(draft.ownerMountId)) draft.ownerMountId = instanceId
+  const snapshot = () => {
+    const alias = Boolean(draft.ownerMountId && draft.ownerMountId !== instanceId)
+    const dirty = (draft.fields.get('revision') ?? 0) !== (draft.fields.get('committedRevision') ?? 0)
+    return { revision: `${draft.identity}:${draft.fields.get('revision') ?? 0}`, dirty: !alias && dirty,
+      readiness: alias ? 'ready' as const : draft.fields.get('error') ? 'uncertain' as const : draft.fields.get('saving') && dirty ? 'saving' as const : draft.fields.get('ready') === false ? 'loading' as const : 'ready' as const }
+  }
+  const off = register({
+    getSnapshot: snapshot,
+    subscribe: listener => { draft.listeners.add(listener); return () => { draft.listeners.delete(listener) } },
+    prepare: (expected, request) => {
+      const observed = snapshot()
+      if (!active || observed.revision !== expected || observed.dirty && !request.ownSave || observed.readiness !== 'ready' && !(request.ownSave && observed.readiness === 'saving')) throw new Error('The contact draft changed before preparation')
+      draft.fences++
+      for (const listener of draft.listeners) listener()
+      let released = false
+      return { validate: snapshot, release: () => {
+        if (released) return
+        released = true
+        draft.fences--
+        for (const listener of draft.listeners) listener()
+      } }
+    }
+  })
+  return () => { active = false; draft.mounts.delete(instanceId); draft.owners.delete(instanceId); off() }
+}
+
+export const registerContactFileEditor = (owner: ValleyPluginApi, view: MountedPluginView): (() => void) => registerContactEditor(owner, view.filePath, view.mountId, { view }, provider => owner.vault.editors.register(view, provider))
 
 /** Create / edit form rendering the contact schema as clean inputs. */
 function relationDrafts(contact: Contact, contacts: Contact[]): RelDraft[] {
@@ -127,7 +173,7 @@ function draftFields(source: Contact, contacts: Contact[], dateFormat: string): 
   }
 }
 
-export function ContactForm({ contact, autosave = false, compact = autosave, controlRef, onActionState }: ContactFormProps): ReactElement {
+export function ContactForm({ contact, mountedView, autosave = false, compact = autosave, controlRef, onActionState }: ContactFormProps): ReactElement {
   useContactIcons()
   const api = React.useMemo(() => runtimeApi, [])
   const store = getStore(api)
@@ -139,30 +185,47 @@ export function ContactForm({ contact, autosave = false, compact = autosave, con
   const dateFormat = api.getState().dateFormat
   const socialLinks = getSocialLinks()
   const draftKey = contact?.relPath ?? '__new__'
+  const [instanceId] = React.useState(() => `contact-form-${crypto.randomUUID()}`)
+  const editorId = mountedView?.mountId ?? instanceId
+  const mountedKey = mountedView ? JSON.stringify([mountedView.mountId, mountedView.generation, mountedView.area, mountedView.paneId, mountedView.tabId, mountedView.filePath, mountedView.pluginId]) : ''
+  React.useEffect(() => {
+    if (mountedKey || !contact?.relPath) return
+    return registerContactEditor(api, contact.relPath, instanceId, { path: contact.relPath, instanceId }, provider => api.vault.editors.registerDocument(contact.relPath, instanceId, provider))
+  }, [api, contact?.relPath, instanceId, mountedKey])
+  const form = React.useRef<HTMLDivElement>(null)
+  const [prepared, setPrepared] = React.useState(false)
+  React.useEffect(() => {
+    const draft = contactDraft(api, draftKey)
+    const listener = () => { setPrepared(draft.fences > 0); if (form.current) form.current.inert = draft.fences > 0 }
+    draft.listeners.add(listener)
+    listener()
+    return () => { draft.listeners.delete(listener) }
+  }, [api, draftKey])
   const base = (contactDraft(api, draftKey).fields.get('sourceContact') as Contact | undefined) ?? contact ?? BLANK
-  const [firstName, setFirstName] = useContactField(api, draftKey, 'firstName', base.firstName)
-  const [middleName, setMiddleName] = useContactField(api, draftKey, 'middleName', base.middleName)
-  const [lastName, setLastName] = useContactField(api, draftKey, 'lastName', base.lastName)
-  const [nickname, setNickname] = useContactField(api, draftKey, 'nickname', base.nickname)
-  const [birthdate, setBirthdate] = useContactField(api, draftKey, 'birthdate', formatContactDate(base.birthdate, dateFormat))
-  const [profession, setProfession] = useContactField(api, draftKey, 'profession', base.profession)
-  const [cover, setCover] = useContactField(api, draftKey, 'cover', base.cover)
-  const [groups, setGroups] = useContactField(api, draftKey, 'groups', base.groups)
+  const [firstName, setFirstName] = useContactField(api, draftKey, 'firstName', base.firstName, editorId)
+  const [middleName, setMiddleName] = useContactField(api, draftKey, 'middleName', base.middleName, editorId)
+  const [lastName, setLastName] = useContactField(api, draftKey, 'lastName', base.lastName, editorId)
+  const [nickname, setNickname] = useContactField(api, draftKey, 'nickname', base.nickname, editorId)
+  const [birthdate, setBirthdate] = useContactField(api, draftKey, 'birthdate', formatContactDate(base.birthdate, dateFormat), editorId)
+  const [profession, setProfession] = useContactField(api, draftKey, 'profession', base.profession, editorId)
+  const [cover, setCover] = useContactField(api, draftKey, 'cover', base.cover, editorId)
+  const [groups, setGroups] = useContactField(api, draftKey, 'groups', base.groups, editorId)
   const [groupDraft, setGroupDraft] = React.useState('')
   const [dragIndex, setDragIndex] = React.useState<number | null>(null)
-  const [phone, setPhone] = useContactField<ContactMethod[]>(api, draftKey, 'phone', base.phone)
-  const [email, setEmail] = useContactField<ContactMethod[]>(api, draftKey, 'email', base.email)
-  const [place, setPlace] = useContactField<ContactMethod[]>(api, draftKey, 'place', base.place)
-  const [organization, setOrganization] = useContactField<Organization[]>(api, draftKey, 'organization', base.organization)
-  const [social, setSocial] = useContactField<SocialRow[]>(api, draftKey, 'social', () => base.socialMedia.map((s) => newSocialRow(s)))
-  const [websites, setWebsites] = useContactField<string[]>(api, draftKey, 'websites', base.websites)
-  const [relations, setRelations] = useContactField<RelDraft[]>(api, draftKey, 'relations', () => relationDrafts(base, snap.contacts))
-  const [note, setNote] = useContactField(api, draftKey, 'note', base.note)
+  const [phone, setPhone] = useContactField<ContactMethod[]>(api, draftKey, 'phone', base.phone, editorId)
+  const [email, setEmail] = useContactField<ContactMethod[]>(api, draftKey, 'email', base.email, editorId)
+  const [place, setPlace] = useContactField<ContactMethod[]>(api, draftKey, 'place', base.place, editorId)
+  const [organization, setOrganization] = useContactField<Organization[]>(api, draftKey, 'organization', base.organization, editorId)
+  const [social, setSocial] = useContactField<SocialRow[]>(api, draftKey, 'social', () => base.socialMedia.map((s) => newSocialRow(s)), editorId)
+  const [websites, setWebsites] = useContactField<string[]>(api, draftKey, 'websites', base.websites, editorId)
+  const [relations, setRelations] = useContactField<RelDraft[]>(api, draftKey, 'relations', () => relationDrafts(base, snap.contacts), editorId)
+  const [note, setNote] = useContactField(api, draftKey, 'note', base.note, editorId)
   const [valleyReady, setNotesReady] = useContactField(api, draftKey, 'ready', !contact?.relPath)
   const [revision] = useContactField(api, draftKey, 'revision', 0)
   const [savedRevision, setSavedRevision] = useContactField(api, draftKey, 'savedRevision', 0)
+  const [, setCommittedRevision] = useContactField(api, draftKey, 'committedRevision', 0)
   const [saving, setSaving] = useContactField(api, draftKey, 'saving', false)
-  const [fileName, setFileName] = useContactField(api, draftKey, 'fileName', '')
+  const [fileName, setFileName] = useContactField(api, draftKey, 'fileName', '', editorId)
   const [fileNameEdited, setFileNameEdited] = useContactField(api, draftKey, 'fileNameEdited', false)
   const knownGroups = allGroups(snap.groupConfigs).filter((g) => !groups.includes(g))
   // Social rows are ordered by hand — the detail view and the note's YAML both
@@ -197,7 +260,7 @@ export function ContactForm({ contact, autosave = false, compact = autosave, con
     setNotesReady(false)
     const draft = contactDraft(api, draftKey)
     void readContactDocument(contact.relPath, api).then((document) => {
-      if (disposed) return
+      if (disposed || draft.fences) return
       const source = parseContactFile(contact.relPath, document.content)
       const fields = { ...draftFields(source, store.getSnapshot().contacts, dateFormat), expectedDocument: document, ready: true }
       for (const [key, value] of Object.entries(fields)) {
@@ -221,13 +284,13 @@ export function ContactForm({ contact, autosave = false, compact = autosave, con
     if (!autosave || !contact?.relPath || !valleyReady) return
     const draft = contactDraft(api, draftKey)
     const source = draft.fields.get('sourceContact') as Contact | undefined
-    if (!source || draft.fields.get('saving') || draft.fields.get('revision') !== draft.fields.get('savedRevision')) return
+    if (!source || draft.fences || draft.fields.get('saving') || draft.fields.get('revision') !== draft.fields.get('committedRevision')) return
     const { relPath: _path, fileName: _name, displayName: _display, ...current } = contact
     const { relPath: _sourcePath, fileName: _sourceName, displayName: _sourceDisplay, ...known } = source
     if (JSON.stringify(current) === JSON.stringify(known)) return
     let disposed = false
     void readContactDocument(contact.relPath, api).then((document) => {
-      if (disposed || draft.fields.get('revision') !== draft.fields.get('savedRevision')) return
+      if (disposed || draft.fences || draft.fields.get('revision') !== draft.fields.get('committedRevision')) return
       const fresh = parseContactFile(contact.relPath, document.content)
       for (const [key, value] of Object.entries({ ...draftFields(fresh, store.getSnapshot().contacts, dateFormat), expectedDocument: document, error: '' })) draft.fields.set(key, value)
       for (const key of [...draft.fields.keys()]) if (key.startsWith('changed:')) draft.fields.delete(key)
@@ -258,9 +321,9 @@ export function ContactForm({ contact, autosave = false, compact = autosave, con
     setGroups(next)
   }
 
-  const save = async (): Promise<void> => {
+  const save = async (commandContext?: ContactFileActionContext): Promise<void> => {
     const draft = contactDraft(api, draftKey)
-    if (!valleyReady || draft.fields.get('saving')) return
+    if (!valleyReady || contact?.relPath && !draft.mounts.has(editorId) || draft.fences || draft.fields.get('saving')) { if (commandContext) throw Object.assign(new Error('The exact Contact editor is unavailable.'), { outcome: 'not-applied' }); return }
     const target = (draft.fields.get('revision') as number | undefined) ?? 0
     setSaving(true)
     setError('')
@@ -290,9 +353,14 @@ export function ContactForm({ contact, autosave = false, compact = autosave, con
     }
     try {
       if (contact && !expectedDocument) throw new Error(uiText('contacts.error.changed'))
-      const saved = await saveContact(next, { previous: base, fileName: fileNameValue, document: expectedDocument }, api)
+      const editor = contact?.relPath ? { ...(draft.owners.get(draft.ownerMountId ?? editorId) ?? (mountedView ? { view: mountedView } : { path: contact.relPath, instanceId })), revision: `${draft.identity}:${target}`, committed: () => setCommittedRevision(target) } : undefined
+      const saved = await saveContact(next, { previous: base, fileName: fileNameValue, document: expectedDocument }, api, editor, commandContext ? async paths => {
+        await commandContext.validate(paths.map(path => ({ kind: 'file' as const, path, fileOperation: 'write' as const })))
+        if (!draft.mounts.has(editorId) || draft.fences || draft.fields.get('revision') !== target || draft.ownerMountId && draft.ownerMountId !== editorId) throw Object.assign(new Error('The Contact draft changed before its file effect.'), { outcome: 'not-applied' })
+      } : undefined)
       if (!saved) throw new Error(uiText('contacts.error.changed'))
       if (saved.editorConflict) throw new Error(uiText('contacts.error.changed'))
+      setCommittedRevision(target)
       if (autosave && contact && saved.relPath !== contact.relPath) {
         // Renamed: this form keeps showing the saved values until the sidebar
         // follows the file to its new name, which reads the card afresh.
@@ -308,6 +376,7 @@ export function ContactForm({ contact, autosave = false, compact = autosave, con
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : uiText('contacts.error.save'))
+      if (commandContext) throw reason
     } finally {
       setSaving(false)
       // A failed save waits for the next edit instead of retrying the same one.
@@ -318,10 +387,82 @@ export function ContactForm({ contact, autosave = false, compact = autosave, con
   const reload = (): void => {
     clearContactDraft(api, draftKey)
   }
+  const requireDraft = (): void => {
+    const draft = contactDraft(api, draftKey)
+    if (!valleyReady || saving || prepared || draft.fences || !draft.mounts.has(editorId) || draft.ownerMountId && draft.ownerMountId !== editorId) throw Object.assign(new Error('The exact Contact raw draft is unavailable or belongs to another mounted copy.'), { code: 'CONTROL_UNAVAILABLE', outcome: 'not-applied' })
+  }
+  useContactFileActions(mountedView, 'form', {
+    snapshot: () => {
+      const draft = contactDraft(api, draftKey), fields = draft.fields
+      const source = (fields.get('sourceContact') as Contact | undefined) ?? contact ?? BLANK
+      const value = <T,>(key: string, fallback: T): T => fields.has(key) ? fields.get(key) as T : fallback
+      const rawFirst = value('firstName', source.firstName), rawLast = value('lastName', source.lastName), rawNickname = value('nickname', source.nickname)
+      const rawName = value('fileNameEdited', false) ? value('fileName', '') : fileNameInSync ? contactFileBase({ ...source, firstName: rawFirst, lastName: rawLast, nickname: rawNickname }) : source.fileName
+      const rawRevision = value('revision', 0)
+      return { firstName: rawFirst, middleName: value('middleName', source.middleName), lastName: rawLast, nickname: rawNickname, birthdate: value('birthdate', formatContactDate(source.birthdate, dateFormat)), profession: value('profession', source.profession), cover: value('cover', source.cover), fileName: rawName, note: value('note', source.note), groups: value('groups', source.groups), phone: value('phone', source.phone), email: value('email', source.email), place: value('place', source.place), organization: value('organization', source.organization), social: value('social', []), websites: value('websites', source.websites), relations: value('relations', []), ready: value('ready', false), saving: value('saving', false), prepared: draft.fences > 0, error: value('error', ''), editorRevision: `${draft.identity}:${rawRevision}`, dirty: rawRevision !== value('committedRevision', 0), ownsDraft: !draft.ownerMountId || draft.ownerMountId === editorId }
+    },
+    actions: {
+      patch: action => {
+        if (action.type !== 'patch') return
+        requireDraft()
+        const setters: Record<string, (value: string) => void> = { firstName: setFirstName, middleName: setMiddleName, lastName: setLastName, nickname: setNickname, birthdate: setBirthdate, profession: setProfession, cover: setCover, fileName: value => { setFileName(value); setFileNameEdited(true) }, note: setNote }
+        for (const [key, value] of Object.entries(action.fields)) setters[key](value)
+      },
+      'row-add': action => {
+        if (action.type !== 'row-add') return
+        requireDraft()
+        const rows = { phone, email, place, organization, social, website: websites, relation: relations }[action.collection]
+        if (rows.length >= 256) throw Object.assign(new Error('The Contact row collection has reached its bound.'), { outcome: 'not-applied' })
+        if (action.collection === 'phone') setPhone([...phone, { value: '' }])
+        else if (action.collection === 'email') setEmail([...email, { value: '' }])
+        else if (action.collection === 'place') setPlace([...place, { value: '' }])
+        else if (action.collection === 'organization') setOrganization([...organization, {}])
+        else if (action.collection === 'social') setSocial([...social, newSocialRow()])
+        else if (action.collection === 'website') setWebsites([...websites, ''])
+        else setRelations([...relations, { toName: '', ref: '', label: '', type: 'friend', role: '' }])
+      },
+      'row-edit': action => {
+        if (action.type !== 'row-edit') return
+        requireDraft()
+        const rows = { phone, email, place, organization, social, website: websites, relation: relations }[action.collection]
+        if (action.index >= rows.length) throw Object.assign(new Error('This exact Contact row is missing.'), { outcome: 'not-applied' })
+        const i = action.index, fields = action.fields
+        if (action.collection === 'phone') setPhone(replace(phone, i, { ...phone[i], ...fields }))
+        else if (action.collection === 'email') setEmail(replace(email, i, { ...email[i], ...fields }))
+        else if (action.collection === 'place') setPlace(replace(place, i, { ...place[i], ...fields }))
+        else if (action.collection === 'organization') setOrganization(replace(organization, i, { ...organization[i], ...fields }))
+        else if (action.collection === 'social') setSocial(replace(social, i, { ...social[i], value: { ...social[i].value, ...fields } }))
+        else if (action.collection === 'website') setWebsites(replace(websites, i, fields.value))
+        else setRelations(replace(relations, i, { ...relations[i], ...fields } as RelDraft))
+      },
+      'row-remove': action => {
+        if (action.type !== 'row-remove') return
+        requireDraft()
+        const rows = { phone, email, place, organization, social, website: websites, relation: relations }[action.collection]
+        if (action.index >= rows.length) throw Object.assign(new Error('This exact Contact row is missing.'), { outcome: 'not-applied' })
+        const i = action.index
+        if (action.collection === 'phone') setPhone(remove(phone, i))
+        else if (action.collection === 'email') setEmail(remove(email, i))
+        else if (action.collection === 'place') setPlace(remove(place, i))
+        else if (action.collection === 'organization') setOrganization(remove(organization, i))
+        else if (action.collection === 'social') setSocial(remove(social, i))
+        else if (action.collection === 'website') setWebsites(remove(websites, i))
+        else setRelations(remove(relations, i))
+      },
+      'group-add': action => { if (action.type === 'group-add') { requireDraft(); const next = knownGroups.find(value => normalizeGroupName(value) === normalizeGroupName(action.value)); if (!next) throw Object.assign(new Error('This configured Contact group is unavailable.'), { outcome: 'not-applied' }); setGroups([...groups, next]) } },
+      'group-remove': action => { if (action.type === 'group-remove') { requireDraft(); if (!groups.includes(action.value)) throw Object.assign(new Error('This exact Contact group is missing.'), { outcome: 'not-applied' }); setGroups(groups.filter(value => value !== action.value)) } },
+      'group-move': action => { if (action.type === 'group-move') { requireDraft(); if (action.from >= groups.length || action.to >= groups.length) throw Object.assign(new Error('This Contact group position is missing.'), { outcome: 'not-applied' }); moveGroup(action.from, action.to) } },
+      'social-move': action => { if (action.type === 'social-move') { requireDraft(); if (action.from >= social.length || action.to >= social.length) throw Object.assign(new Error('This Contact social row position is missing.'), { outcome: 'not-applied' }); const next = social.slice(), [row] = next.splice(action.from, 1); next.splice(action.to, 0, row); setSocial(next) } },
+      'social-platform': action => { if (action.type === 'social-platform') { requireDraft(); if (!social[action.index]) throw Object.assign(new Error('This exact Contact social row is missing.'), { outcome: 'not-applied' }); setSocial(replace(social, action.index, { ...social[action.index], value: { ...social[action.index].value, platform: action.value } })) } },
+      flush: async (_action, context) => { requireDraft(); await save(context) },
+      reload: () => { const draft = contactDraft(api, draftKey); if (draft.fences || saving || !draft.mounts.has(editorId) || draft.ownerMountId && draft.ownerMountId !== editorId) throw Object.assign(new Error('This exact Contact draft cannot be reloaded.'), { outcome: 'not-applied' }); reload() },
+      settings: async (_action, context) => { await context.validate([]); await api.workspace.openSettings('groups') }
+    }
+  })
   React.useEffect(() => () => {
     if (!autosave) return
     const draft = contactDraft(api, draftKey)
-    if (!draft.fields.get('saving') && draft.fields.get('revision') === draft.fields.get('savedRevision')) forgetContactDraft(api, draftKey)
+    if (!draft.fences && !draft.mounts.size && !draft.fields.get('saving') && draft.fields.get('revision') === draft.fields.get('committedRevision')) forgetContactDraft(api, draftKey)
   }, [autosave, api, draftKey])
 
   const cancel = React.useCallback((): void => {
@@ -338,8 +479,8 @@ export function ContactForm({ contact, autosave = false, compact = autosave, con
     return () => { controlRef.current = null }
   }, [controlRef, cancel])
   React.useEffect(() => {
-    onActionState?.({ saving, canSave: valleyReady, label: contact ? uiText('auto.efc007a393f6') : uiText('auto.6e157c5da441') })
-  }, [saving, valleyReady, contact, onActionState])
+    onActionState?.({ saving, canSave: valleyReady && !prepared, label: contact ? uiText('auto.efc007a393f6') : uiText('auto.6e157c5da441') })
+  }, [saving, valleyReady, prepared, contact, onActionState])
   React.useEffect(() => {
     if (!autosave || !valleyReady || saving || revision === savedRevision) return
     const timer = window.setTimeout(() => { void saveRef.current() }, 600)
@@ -347,7 +488,7 @@ export function ContactForm({ contact, autosave = false, compact = autosave, con
   }, [autosave, valleyReady, saving, revision, savedRevision])
 
   return (
-    <div className={`ct-form${compact ? ' ct-form-compact' : ''}`}>
+    <div ref={form} className={`ct-form${compact ? ' ct-form-compact' : ''}`}>
       {error && (
         <p role="alert" className="ct-form-error">
           {error}

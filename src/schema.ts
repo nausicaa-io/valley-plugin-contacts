@@ -70,6 +70,8 @@ const FIELDS = {
 
 type FieldKey = keyof typeof FIELDS
 const FIELD_KEYS = Object.keys(FIELDS) as FieldKey[]
+/** The order Contacts writes fields in, for a new card and for a field that reappears. */
+const WRITE_ORDER: FieldKey[] = ['uid', ...FIELD_KEYS.filter((key) => key !== 'uid')]
 
 // --- Labels ------------------------------------------------------------------
 
@@ -379,9 +381,15 @@ export function newContactUid(): string {
 /** A new `.vcf` file (vCard 4.0) for a contact. */
 export function buildContactFile(contact: Contact): string {
   const withUid = contact.uid ? contact : { ...contact, uid: newContactUid() }
-  const order: FieldKey[] = ['uid', ...FIELD_KEYS.filter((key) => key !== 'uid')]
-  const properties = [property({ name: 'VERSION', value: '4.0' }), ...order.flatMap((key) => fieldProperties(withUid, key).map(property))]
+  const properties = [property({ name: 'VERSION', value: '4.0' }), ...WRITE_ORDER.flatMap((key) => fieldProperties(withUid, key).map(property))]
   return serializeCard({ properties }) + '\r\n'
+}
+
+/** Where a field without properties goes: before the first property of a field written after it. */
+function insertionIndex(properties: VCardProperty[], key: FieldKey): number {
+  const later = new Set<string>(WRITE_ORDER.slice(WRITE_ORDER.indexOf(key) + 1).flatMap((field) => FIELDS[field]))
+  const index = properties.findIndex((entry) => later.has(entry.name))
+  return index < 0 ? properties.length : index
 }
 
 /**
@@ -409,7 +417,7 @@ export function updateContactFile(contact: Contact, previous: Contact, raw: stri
       const [, , , prefix = '', suffix = ''] = oldN.value.split(/(?<!\\);/)
       return property({ ...input, value: input.value.replace(/;;$/, `;${prefix};${suffix}`) })
     })
-    const at = removed.length ? properties.indexOf(removed[0]) : properties.length
+    const at = removed.length ? properties.indexOf(removed[0]) : insertionIndex(properties, key)
     const groups = new Set(removed.map((entry) => entry.group).filter(Boolean))
     const kept = properties.filter((entry) => !removed.includes(entry))
     // Apple keeps labels in companion `X-AB*` lines of the same group.

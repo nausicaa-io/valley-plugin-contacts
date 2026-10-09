@@ -43,7 +43,7 @@ function setup(
 }
 
 function lastSavedContent(mock: ReturnType<typeof createMockValleyApi>): string {
-  return vi.mocked(mock.api.vault.writeTextDocumentGuarded).mock.calls.at(-1)?.[1] ?? ''
+  return vi.mocked(mock.api.vault.editors.saveDocument).mock.calls.at(-1)?.[2] ?? vi.mocked(mock.api.vault.writeTextDocumentGuarded).mock.calls.at(-1)?.[1] ?? ''
 }
 
 function setupPanelContacts(): ReturnType<typeof createMockValleyApi> {
@@ -373,21 +373,61 @@ describe('Contacts surface edit targeting', () => {
 })
 
 describe('Contact form document revisions', () => {
-  it('loads editor-owned fields and retains its draft after a concurrent edit', async () => {
+  it('completes an exact own-save before renaming a filename-only contact draft', async () => {
+    const { mock, contact } = setup([])
+    await getStore(mock.api).ready()
+    const before = await mock.api.vault.readFile(contact.relPath)
+    const controlRef = React.createRef<ContactFormHandle>()
+    const view = render(<ContactForm contact={contact} controlRef={controlRef} />)
+    await screen.findByDisplayValue('Original note')
+    fireEvent.change(view.container.querySelector('.ct-file-name input')!, { target: { value: 'Canopy card' } })
+    await act(async () => { await controlRef.current!.save() })
+    expect(mock.api.vault.editors.saveDocument).toHaveBeenCalledWith(contact.relPath, expect.any(String), before, expect.any(Object), expect.any(String))
+    expect(await mock.api.vault.readFile('Plants/Canopy card.vcf')).toBe(before)
+    expect(await mock.api.vault.stat(contact.relPath)).toBeNull()
+  })
+
+  it('freezes shared logical contact forms and saves through the canonical draft owner from either copy', async () => {
+    const { mock, contact } = setup([])
+    await getStore(mock.api).ready()
+    const first = React.createRef<ContactFormHandle>(), second = React.createRef<ContactFormHandle>()
+    const view = render(<><ContactForm contact={contact} controlRef={first} /><ContactForm contact={contact} controlRef={second} /></>)
+    await waitFor(() => expect(screen.getAllByDisplayValue('Original note')).toHaveLength(2))
+    const registrations = vi.mocked(mock.api.vault.editors.registerDocument).mock.calls
+    expect(registrations).toHaveLength(2)
+    await waitFor(() => registrations.forEach(([, , provider]) => expect(provider.getSnapshot()).toMatchObject({ dirty: false, readiness: 'ready' })))
+    let lease!: Awaited<ReturnType<typeof mock.prepareFileEditors>>
+    await act(async () => { lease = await mock.prepareFileEditors(contact.relPath) })
+    expect([...view.container.querySelectorAll<HTMLElement>('.ct-form')].every(form => form.inert)).toBe(true)
+    fireEvent.change(screen.getAllByDisplayValue('Original note')[0], { target: { value: 'Blocked draft' } })
+    expect(screen.queryByDisplayValue('Blocked draft')).toBeNull()
+    await lease.validate()
+    await act(async () => { await lease.release() })
+    fireEvent.change(screen.getAllByDisplayValue('Original note')[0], { target: { value: 'Shared fern draft' } })
+    expect(screen.getAllByDisplayValue('Shared fern draft')).toHaveLength(2)
+    expect(registrations.map(([, , provider]) => provider.getSnapshot())).toEqual([expect.objectContaining({ dirty: true }), expect.objectContaining({ dirty: false })])
+    await expect(mock.api.drivers.files.writeFile(contact.relPath, 'Overwrite')).rejects.toMatchObject({ code: 'DIRTY_EDITOR' })
+    await act(async () => { await second.current!.save() })
+    expect(mock.api.vault.editors.saveDocument).toHaveBeenCalledWith(contact.relPath, registrations[0][1], expect.stringContaining('NOTE:Shared fern draft'), expect.any(Object), expect.any(String))
+    expect(await mock.api.vault.readFile(contact.relPath)).toContain('NOTE:Shared fern draft')
+  })
+
+  it('loads editor-owned fields and refuses a direct SDK overwrite of its dirty draft', async () => {
     const { mock, contact } = setup([])
     await getStore(mock.api).ready()
     const draft = buildContactFile({ ...contact, profession: 'Field botanist', note: 'Unsaved observation' })
     await mock.api.vault.writeFile(contact.relPath, draft)
     const controlRef = React.createRef<ContactFormHandle>()
-    const { container } = render(<ContactForm contact={contact} controlRef={controlRef} />)
+    render(<ContactForm contact={contact} controlRef={controlRef} />)
     await screen.findByDisplayValue('Field botanist')
     const profession = screen.getByDisplayValue('Field botanist')
     fireEvent.change(profession, { target: { value: 'Mycologist' } })
-    await mock.api.vault.writeFile(contact.relPath, `${draft}Newer typing\n`)
+    await expect(mock.api.vault.writeFile(contact.relPath, `${draft}Newer typing\n`)).rejects.toMatchObject({ code: 'DIRTY_EDITOR' })
+    expect(await mock.api.vault.readFile(contact.relPath)).toBe(draft)
     await act(async () => controlRef.current!.save())
-    await waitFor(() => expect(container.querySelector('[role=alert]')).toBeTruthy())
+    expect(mock.api.vault.editors.saveDocument).toHaveBeenCalled()
     expect(screen.getByDisplayValue('Mycologist')).toBeTruthy()
-    expect(await mock.api.vault.readFile(contact.relPath)).toBe(`${draft}Newer typing\n`)
+    expect(await mock.api.vault.readFile(contact.relPath)).toContain('ROLE:Mycologist')
   })
 
   it('does not enable saving after an unreadable document', async () => {
@@ -419,8 +459,15 @@ it.each([false, true])('preserves form edits during initial document loading (re
     await act(async () => { release(); await held })
     expect(screen.getByDisplayValue('Moss')).toBeTruthy()
     await act(async () => controlRef.current!.save())
-    await waitFor(() => expect(mock.api.vault.writeTextDocumentGuarded).toHaveBeenCalled())
-    expect(lastSavedContent(mock)).toContain('N:Canopy;Moss;;;')
+    await waitFor(() => expect(mock.api.vault.editors.saveDocument).toHaveBeenCalled())
+    if (remount) {
+      expect(screen.getByRole('alert')).toBeTruthy()
+      expect(await mock.api.vault.readFile(contact.relPath)).toContain('N:Canopy;Fern;;;')
+      expect(vi.mocked(mock.api.vault.editors.registerDocument).mock.calls.at(-1)![2].getSnapshot()).toMatchObject({ dirty: true })
+    } else {
+      await waitFor(async () => expect(await mock.api.vault.readFile('Plants/Moss Canopy.vcf')).toContain('N:Canopy;Moss;;;'))
+      expect(await mock.api.vault.stat(contact.relPath)).toBeNull()
+    }
   } finally { release() }
 })
 
@@ -443,7 +490,7 @@ describe('Contact editor autosave', () => {
     render(<ContactForm contact={contact} autosave />)
     await screen.findByDisplayValue('Canopy')
     const newer = buildContactFile({ ...contact, profession: 'Changed elsewhere' })
-    await mock.api.vault.writeFile(contact.relPath, newer)
+    await act(async () => { await mock.api.vault.writeFile(contact.relPath, newer) })
     fireEvent.change(screen.getByDisplayValue('Canopy'), { target: { value: 'Draft' } })
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy(), { timeout: 3000 })
     expect(screen.getByDisplayValue('Draft')).toBeTruthy()

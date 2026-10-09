@@ -148,6 +148,14 @@ describe('updating a card', () => {
     const previous = parseContactFile('Meadow/Oak.vcf', own)
     expect(updateContactFile(previous, previous, own)).toBe(own)
   })
+
+  it('puts a removed field that reappears back where Contacts writes it', () => {
+    const own = buildContactFile(contactAt('Meadow/Oak.vcf', { firstName: 'Oak', phone: [{ value: '+99 100 000 01' }], relations: [{ to: 'Moss', type: 'friend' }], note: 'Acorn survey' }))
+    const previous = parseContactFile('Meadow/Oak.vcf', own)
+    const stripped = updateContactFile({ ...previous, phone: [], relations: [] }, previous, own)
+    expect(stripped).not.toMatch(/TEL|RELATED/)
+    expect(updateContactFile(previous, parseContactFile('Meadow/Oak.vcf', stripped), stripped)).toBe(own)
+  })
 })
 
 describe('relations', () => {
