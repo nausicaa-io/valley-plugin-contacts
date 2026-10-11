@@ -11,10 +11,10 @@ import { formatContactBirthdate, initials } from './util'
 import { resolveSocial } from './social'
 import { Building, Cake, Link, Mail, MapPin, Phone, Plus, X } from './icons'
 import { uiText } from './localization'
-import type { MountedPluginView } from '@valley/plugin-sdk'
+import type { LinkTarget, MountedPluginView } from '@valley/plugin-sdk'
 import type { TextDocumentRead } from '@valley/plugin-sdk/types'
 import { readContactDocument } from './data'
-import { useContactFileActions, type ContactFileActionContext } from './fileViewCommands'
+import { CONFIRMED_LINK_OPEN, useContactFileActions, type ContactFileActionContext } from './fileViewCommands'
 
 /** The card's Markdown notes, rendered by the host like a note's reading view. */
 function ContactNotes({ contact }: { contact: Contact }): ReactElement {
@@ -130,6 +130,7 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
     .filter((g) => !groupQuery || normalizeGroupName(g).includes(groupQuery))
     .slice(0, 7)
   const optionCount = suggestedGroups.length
+  const relatedPath = (index: number): string | undefined => { const relation = contact.relations[index]; return relation ? resolveRelation(relation.to, store.getSnapshot().contacts)?.relPath : undefined }
   useContactFileActions(mountedView, 'reader', {
     snapshot: () => ({ groups: liveReading.current.groups, savingGroups: liveReading.current.savingGroups, phone: contact.phone, email: contact.email, place: contact.place, websites: contact.websites, social: contact.socialMedia, relations: contact.relations, documentRevision: liveReading.current.documentRevision?.revisionToken ?? null }),
     actions: {
@@ -138,13 +139,17 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
       'link-open': async (action, context) => {
         if (action.type !== 'link-open') return
         const i = action.index
-        if (action.kind === 'relation') { const relation = contact.relations[i], path = relation ? resolveRelation(relation.to, snap.contacts)?.relPath : undefined; if (!path) throw Object.assign(new Error('This related Contact target is unavailable.'), { outcome: 'not-applied' }); await context.validate([{ kind: 'file', path, fileOperation: 'read' }]); store.openContact(path); return }
+        if (action.kind === 'relation') { const path = relatedPath(i); if (!path) throw Object.assign(new Error('This related Contact target is unavailable.'), { outcome: 'not-applied' }); await context.validate(); if (relatedPath(i) !== path) throw Object.assign(new Error('The related Contact target changed while authorization was pending.'), { outcome: 'not-applied' }); store.openContact(path); return }
         const value = action.kind === 'phone' ? contact.phone[i]?.value : action.kind === 'email' ? contact.email[i]?.value : action.kind === 'website' ? contact.websites[i] : action.kind === 'address' ? contact.place[i]?.value : contact.socialMedia[i] ? resolveSocial(contact.socialMedia[i], socialLinks).href : null
         if (!value) throw Object.assign(new Error('This exact reading Contact link is unavailable.'), { outcome: 'not-applied' })
-        await context.validate([])
-        await api.links.open(action.kind === 'address' ? { category: 'location', value } : action.kind === 'phone' ? `tel:${value}` : action.kind === 'email' ? `mailto:${value}` : value)
+        await context.validate()
+        const opened = await api.links.open(action.kind === 'address' ? { category: 'location', value } : action.kind === 'phone' ? { category: 'phone', value } : action.kind === 'email' ? { category: 'email', value } : value)
+        return { [CONFIRMED_LINK_OPEN]: opened?.status === 'opened' }
       },
-      settings: async (_action, context) => { await context.validate([]); await api.workspace.openSettings('groups') }
+      settings: async (_action, context) => { await context.validate(); await api.workspace.openSettings('groups') }
+    },
+    targets: {
+      'link-open': action => { const path = action.type === 'link-open' && action.kind === 'relation' ? relatedPath(action.index) : undefined; return path ? [{ kind: 'file', path, fileOperation: 'read' }] : [] }
     }
   })
 
@@ -276,8 +281,8 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
       )}
 
       <FieldSection title={uiText('auto.b37456c4530b')} rows={[
-        ...contact.phone.map((m) => ({ icon: <Phone />, value: m.value, label: m.type, href: `tel:${m.value}` })),
-        ...contact.email.map((m) => ({ icon: <Mail />, value: m.value, label: m.type, href: `mailto:${m.value}` })),
+        ...contact.phone.map((m) => ({ icon: <Phone />, value: m.value, label: m.type, href: `tel:${m.value}`, link: { category: 'phone', value: m.value } })),
+        ...contact.email.map((m) => ({ icon: <Mail />, value: m.value, label: m.type, href: `mailto:${m.value}`, link: { category: 'email', value: m.value } })),
         ...contact.place.map((m) => ({ icon: <MapPin />, value: m.value, label: m.type, onClick: () => openAddress(m.value) })),
         ...contact.websites.map((w) => ({ icon: <Link />, value: w, href: w })),
         ...(contact.birthdate ? [{ icon: <Cake />, value: formatContactBirthdate(contact.birthdate, dateFormat), label: 'birthday' }] : [])
@@ -315,6 +320,7 @@ interface FieldRow {
   value: string
   label?: string
   href?: string
+  link?: LinkTarget
   onClick?: () => void
 }
 
@@ -330,7 +336,7 @@ function FieldSection({ title, rows }: { title: string; rows: FieldRow[] }): Rea
           <div className="ct-field-body">
             <div className="ct-field-value">
               {r.href ? (
-                <a href={r.href} onClick={event => { event.preventDefault(); void api.links.open(r.href!) }}>{r.value}</a>
+                <a href={r.href} onClick={event => { event.preventDefault(); void api.links.open(r.link ?? r.href!) }}>{r.value}</a>
               ) : r.onClick ? (
                 <button className="ct-field-link" type="button" onClick={r.onClick}>{r.value}</button>
               ) : r.value}

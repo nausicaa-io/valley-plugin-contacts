@@ -456,7 +456,7 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
       'social-platform': action => { if (action.type === 'social-platform') { requireDraft(); if (!social[action.index]) throw Object.assign(new Error('This exact Contact social row is missing.'), { outcome: 'not-applied' }); setSocial(replace(social, action.index, { ...social[action.index], value: { ...social[action.index].value, platform: action.value } })) } },
       flush: async (_action, context) => { requireDraft(); await save(context) },
       reload: () => { const draft = contactDraft(api, draftKey); if (draft.fences || saving || !draft.mounts.has(editorId) || draft.ownerMountId && draft.ownerMountId !== editorId) throw Object.assign(new Error('This exact Contact draft cannot be reloaded.'), { outcome: 'not-applied' }); reload() },
-      settings: async (_action, context) => { await context.validate([]); await api.workspace.openSettings('groups') }
+      settings: async (_action, context) => { await context.validate(); await api.workspace.openSettings('groups') }
     }
   })
   React.useEffect(() => () => {

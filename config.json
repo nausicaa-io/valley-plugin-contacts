@@ -6160,6 +6160,9 @@
     }
   ],
   "permissions": {
+    "storage": {
+      "vault": true
+    },
     "largeData": true
   }
 }

@@ -23,11 +23,14 @@ export const contactFileSaveSchema = { oneOf: [action('flush'), action('reading-
 export const contactFileExecuteSchema = { oneOf: [action('settings'), action('link-open', { kind: { enum: ['phone', 'email', 'website', 'social', 'address', 'relation'] }, index })] }
 export type ContactFileAction = { type: 'mode'; value: 'reading' | 'editing' } | { type: 'patch'; fields: Record<string, string> } | { type: 'row-add'; collection: ContactCollection } | { type: 'row-edit'; collection: ContactCollection; index: number; fields: Record<string, string> } | { type: 'row-remove'; collection: ContactCollection; index: number } | { type: 'group-add' | 'group-remove' | 'reading-group-add' | 'reading-group-remove'; value: string } | { type: 'group-move' | 'social-move'; from: number; to: number } | { type: 'social-platform'; index: number; value: string } | { type: 'link-open'; kind: 'phone' | 'email' | 'website' | 'social' | 'address' | 'relation'; index: number } | { type: 'reload' | 'flush' | 'settings' }
 export interface ContactFileActionContext { validate(paths?: CommandFileTarget[]): Promise<void> }
-export interface ContactFileController { snapshot(): Record<string, unknown>; actions: Partial<Record<ContactFileAction['type'], (action: ContactFileAction, context: ContactFileActionContext) => void | Promise<unknown>>> }
+/** `targets` declares the extra vault files an action reads besides the mounted file; the command's fileTargets resolver publishes them, so `validate()` re-checks exactly the declared set. */
+export interface ContactFileController { snapshot(): Record<string, unknown>; actions: Partial<Record<ContactFileAction['type'], (action: ContactFileAction, context: ContactFileActionContext) => void | Promise<unknown>>>; targets?: Partial<Record<ContactFileAction['type'], (action: ContactFileAction) => CommandFileTarget[]>> }
 interface Entry { target: MountedPluginView; controllers: Map<'view' | 'form' | 'reader', { token: symbol; current: ContactFileController }>; signature: string; revision: string; pending: boolean }
 const state = (ownerApi = api) => ownerApi.runtime.getOrCreate('contacts.fileActions', () => ({ owners: new Map<string, Entry>(), identity: crypto.randomUUID(), sequence: 0 }))
 const keyOf = (target: Pick<MountedPluginView, 'mountId' | 'generation'>) => JSON.stringify([target.mountId, target.generation])
 const nextRevision = (ownerApi = api) => { const current = state(ownerApi); return `${current.identity}:${++current.sequence}` }
+export const CONFIRMED_LINK_OPEN = Symbol('contacts.confirmedLinkOpen')
+const isConfirmedLinkOpen = (effect: unknown): boolean => !!effect && typeof effect === 'object' && (effect as Record<symbol, unknown>)[CONFIRMED_LINK_OPEN] === true
 const refuse = (code: string, message: string) => Object.assign(new Error(message), { code, outcome: 'not-applied' })
 function record(raw: unknown, fields: readonly string[], required = fields): Record<string, unknown> { if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).some(key => !fields.includes(key)) || required.some(key => !(key in raw))) throw new Error('Expected a strict Contacts file action object.'); return raw as Record<string, unknown> }
 function string(raw: unknown, maximum = 65536): string { if (typeof raw !== 'string' || raw.length > maximum) throw new Error('Invalid or oversized Contacts action text.'); return raw }
@@ -76,7 +79,7 @@ export function useContactFileActions(target: MountedPluginView | undefined, par
     let entry = current.owners.get(key)
     if (!entry) { entry = { target, controllers: new Map(), signature: '', revision: nextRevision(ownerApi), pending: false }; current.owners.set(key, entry) }
     if (entry.controllers.has(part)) throw new Error('This Contacts mounted controller is already registered.')
-    entry.controllers.set(part, { token, current: { snapshot: () => latest.current.snapshot(), actions: Object.fromEntries(Object.keys(controller.actions).map(type => [type, (action: ContactFileAction, context: ContactFileActionContext) => latest.current.actions[action.type]?.(action, context)])) } }); entry.signature = ''; entry.revision = nextRevision(ownerApi)
+    entry.controllers.set(part, { token, current: { snapshot: () => latest.current.snapshot(), actions: Object.fromEntries(Object.keys(controller.actions).map(type => [type, (action: ContactFileAction, context: ContactFileActionContext) => latest.current.actions[action.type]?.(action, context)])), targets: Object.fromEntries(Object.keys(controller.actions).map(type => [type, (action: ContactFileAction) => latest.current.targets?.[action.type]?.(action) ?? []])) } }); entry.signature = ''; entry.revision = nextRevision(ownerApi)
     const captured = entry
     return () => { if (captured.controllers.get(part)?.token !== token) return; captured.controllers.delete(part); captured.signature = ''; captured.revision = nextRevision(ownerApi); if (part === 'view' && current.owners.get(key) === captured) current.owners.delete(key) }
   }, [ownerApi, key, part])
@@ -92,7 +95,11 @@ export function registerContactFileCommands(pluginApi: ValleyPluginApi): () => v
   const inspectionSchema = object({ target: targetSchema, filePath: text(32768), revision: text(256), view: viewSchema, form: { anyOf: [formSchema, { type: 'null' }] }, reader: { anyOf: [readerSchema, { type: 'null' }] } })
   const resultSchema = object({ status: { const: 'queued' }, target: targetSchema, action: text(256), originalRevision: text(256) })
   const revisionRequirements = [{ argument: 'expectedRevision', inspectionCommand: 'contacts:file-view-inspect', description: 'Exact mounted Contacts mode, reading values and retained raw form/editor revision.' }]
-  const fileTargets = (input: ReturnType<typeof parseInput>, write = false): CommandFileTarget[] => [{ kind: 'file', path: owner(input.target, ownerApi).target.filePath, fileOperation: write ? 'write' : 'read' }]
+  const fileTargets = (input: ReturnType<typeof parseInput>, write = false): CommandFileTarget[] => {
+    const entry = owner(input.target, ownerApi), action = input.action
+    const controller = action ? [...entry.controllers.values()].find(controller => controller.current.actions[action.type]) : undefined
+    return [{ kind: 'file', path: entry.target.filePath, fileOperation: write ? 'write' : 'read' }, ...(action ? controller?.current.targets?.[action.type]?.(action) ?? [] : [])]
+  }
   const invoke = async (input: ReturnType<typeof parseInput>, context: CommandContext) => {
     const entry = owner(input.target, ownerApi), observation = inspect(entry, ownerApi)
     if (entry.pending || !input.action || observation.revision !== input.expectedRevision) throw refuse('REVISION_CONFLICT', 'Contacts state changed. Inspect its exact file view again.')
@@ -103,7 +110,7 @@ export function registerContactFileCommands(pluginApi: ValleyPluginApi): () => v
     const validate = async (targets?: CommandFileTarget[]): Promise<void> => { assertCurrent(); const before = inspect(entry, ownerApi).revision; if (context.validateBeforeRun && !await context.validateBeforeRun(targets ?? fileTargets(input, ['flush', 'reading-group-add', 'reading-group-remove'].includes(action.type)))) throw refuse('PERMISSION_DENIED', 'The Contacts action was denied before its effect.'); assertCurrent(); if (inspect(entry, ownerApi).revision !== before) throw refuse('REVISION_CONFLICT', 'Contacts changed while authorization was pending.') }
     await validate(); if (inspect(entry, ownerApi).revision !== input.expectedRevision) throw refuse('REVISION_CONFLICT', 'Contacts changed before dispatch.')
     entry.pending = true; entry.revision = nextRevision(ownerApi)
-    try { await controller.current.actions[action.type]!(action, { validate }); if (state(ownerApi).owners.get(keyOf(input.target)) !== entry || !entry.controllers.has('view')) throw new Error('The Contacts file view disappeared after dispatch.'); return { status: 'queued' as const, target: input.target, action: action.type, originalRevision: input.expectedRevision! } }
+    try { const effect = await controller.current.actions[action.type]!(action, { validate }); if ((state(ownerApi).owners.get(keyOf(input.target)) !== entry || !entry.controllers.has('view')) && !(action.type === 'link-open' && isConfirmedLinkOpen(effect))) throw new Error('The Contacts file view disappeared after dispatch.'); return { status: 'queued' as const, target: input.target, action: action.type, originalRevision: input.expectedRevision! } }
     catch (cause) { if ((cause as { outcome?: string })?.outcome === 'not-applied') throw cause; throw Object.assign(new Error('The Contacts action was dispatched without a confirmed effect. Inspect its original execution and retained form/file; do not replay it.'), { code: 'EFFECT_UNVERIFIED', outcome: 'unknown', outcomeUnknown: true, retryable: false, cause }) }
     finally { entry.pending = false; entry.signature = ''; entry.revision = nextRevision(ownerApi) }
   }

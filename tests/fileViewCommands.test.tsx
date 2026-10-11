@@ -39,7 +39,16 @@ function setup() {
   }
   const ready = async () => { await act(async () => getStore(mock.api).ready()); await screen.findByText('Original'); await waitFor(async () => expect((await inspect()).reader?.documentRevision).toBeTypeOf('string')) }
   const editing = async () => { await invoke({ type: 'mode', value: 'editing' }); await waitFor(async () => expect((await inspect()).form?.ready).toBe(true)) }
-  return { mock, command, inspect, invoke, ready, editing }
+  // Main refuses RESOURCE_TARGET_CHANGED unless every validateBeforeRun target set equals the command's declared fileTargets.
+  const invokeDeclared = async (action: ContactFileAction, route = 'execute') => {
+    const definition = command(`file-view-${route}`), calls: unknown[] = []
+    const declared = await definition.fileTargets!(definition.input!.parse({ target, expectedRevision: (await inspect()).revision, action }))
+    await invoke(action, route, { validateBeforeRun: async targets => { calls.push(targets); return true } })
+    expect(calls.length, action.type).toBeGreaterThan(0)
+    for (const validated of calls) expect(validated, action.type).toEqual(declared)
+    return declared
+  }
+  return { mock, command, inspect, invoke, invokeDeclared, ready, editing }
 }
 
 describe('exact mounted Contact file actions', () => {
@@ -75,10 +84,43 @@ describe('exact mounted Contact file actions', () => {
     await fixture.invoke({ type: 'reading-group-add', value: 'Work' }, 'save', { validateBeforeRun: async () => { await new Promise(resolve => setTimeout(resolve, 5)); return true } }); expect(await fixture.mock.api.vault.readFile(path)).toContain('CATEGORIES:Friends,Work')
     await fixture.invoke({ type: 'reading-group-remove', value: 'Work' }, 'save'); expect((await fixture.inspect()).reader?.groups).toEqual(['Friends'])
     const links = vi.spyOn(fixture.mock.api.links, 'open'), settings = vi.spyOn(fixture.mock.api.workspace, 'openSettings'), open = vi.spyOn(fixture.mock.api.workspace, 'openMainTab')
-    const values = { phone: 'tel:+41 123', email: 'mailto:fern@example.test', website: 'https://example.com/fern', social: 'https://github.com/fern', address: { category: 'location', value: 'Zurich' } }
-    for (const [kind, value] of Object.entries(values)) { await fixture.invoke({ type: 'link-open', kind: kind as 'phone', index: 0 }, 'execute'); expect(links).toHaveBeenLastCalledWith(value) }
-    await fixture.invoke({ type: 'link-open', kind: 'relation', index: 0 }, 'execute'); expect(getStore(fixture.mock.api).getSnapshot().selectedPath).toBe(relatedPath); expect(open).toHaveBeenCalledWith({ newTab: undefined })
-    await fixture.invoke({ type: 'settings' }, 'execute'); expect(settings).toHaveBeenCalledWith('groups')
+    const values = { phone: { category: 'phone', value: '+41 123' }, email: { category: 'email', value: 'fern@example.test' }, website: 'https://example.com/fern', social: 'https://github.com/fern', address: { category: 'location', value: 'Zurich' } }
+    const own = { kind: 'file', path, fileOperation: 'read' }
+    for (const [kind, value] of Object.entries(values)) { expect(await fixture.invokeDeclared({ type: 'link-open', kind: kind as 'phone', index: 0 })).toEqual([own]); expect(links).toHaveBeenLastCalledWith(value) }
+    expect(await fixture.invokeDeclared({ type: 'link-open', kind: 'relation', index: 0 })).toEqual(expect.arrayContaining([own, { kind: 'file', path: relatedPath, fileOperation: 'read' }])); expect(getStore(fixture.mock.api).getSnapshot().selectedPath).toBe(relatedPath); expect(open).toHaveBeenCalledWith({ newTab: undefined })
+    expect(await fixture.invokeDeclared({ type: 'settings' })).toEqual([own]); expect(settings).toHaveBeenCalledWith('groups')
+  })
+
+  it('opens clicked reading phone and email links as typed host links, not raw tel:/mailto: URLs', async () => {
+    const fixture = setup(); render(<ContactFileView relPath={path} mountedView={mountedView} />); await fixture.ready()
+    const links = vi.spyOn(fixture.mock.api.links, 'open')
+    const phone = screen.getByText('+41 123'), email = screen.getByText('fern@example.test')
+    expect(phone.closest('a')?.getAttribute('href')).toBe('tel:+41 123'); expect(email.closest('a')?.getAttribute('href')).toBe('mailto:fern@example.test')
+    fireEvent.click(phone); expect(links).toHaveBeenLastCalledWith({ category: 'phone', value: '+41 123' })
+    fireEvent.click(email); expect(links).toHaveBeenLastCalledWith({ category: 'email', value: 'fern@example.test' })
+    expect(links).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports a confirmed web/social link-open as applied when its own opened view replaces the Contacts file view', async () => {
+    for (const kind of ['website', 'social'] as const) {
+      const fixture = setup(), rendered = render(<ContactFileView relPath={path} mountedView={mountedView} />); await fixture.ready()
+      vi.mocked(fixture.mock.api.links.open).mockImplementationOnce(async () => { rendered.unmount(); return { status: 'opened' } })
+      await expect(fixture.invoke({ type: 'link-open', kind, index: 0 }, 'execute')).resolves.toMatchObject({ status: 'queued', action: 'link-open', target })
+      expect(fixture.mock.api.links.open).toHaveBeenCalledTimes(1)
+      cleanup(); for (const dispose of disposals.splice(0).reverse()) await dispose(); await disposeStore()
+    }
+    for (const status of ['cancelled', 'failed'] as const) {
+      const fixture = setup(), rendered = render(<ContactFileView relPath={path} mountedView={mountedView} />); await fixture.ready()
+      vi.mocked(fixture.mock.api.links.open).mockImplementationOnce(async () => { rendered.unmount(); return { status } })
+      await expect(fixture.invoke({ type: 'link-open', kind: 'website', index: 0 }, 'execute')).rejects.toMatchObject({ code: 'EFFECT_UNVERIFIED', outcome: 'unknown', retryable: false })
+      cleanup(); for (const dispose of disposals.splice(0).reverse()) await dispose(); await disposeStore()
+    }
+    const fixture = setup(), rendered = render(<ContactFileView relPath={path} mountedView={mountedView} />); await fixture.ready()
+    vi.mocked(fixture.mock.api.links.open).mockImplementationOnce(async () => { rendered.unmount(); throw new Error('Lost link acknowledgement') })
+    await expect(fixture.invoke({ type: 'link-open', kind: 'social', index: 0 }, 'execute')).rejects.toMatchObject({ code: 'EFFECT_UNVERIFIED', outcome: 'unknown', retryable: false })
+    const remounted = render(<ContactFileView relPath={path} mountedView={mountedView} />); await screen.findByText('Original')
+    vi.spyOn(fixture.mock.api.workspace, 'openSettings').mockImplementationOnce(async () => { remounted.unmount() })
+    await expect(fixture.invoke({ type: 'settings' }, 'execute')).rejects.toMatchObject({ code: 'EFFECT_UNVERIFIED', outcome: 'unknown' })
   })
 
   it('fences the retained shared raw draft to its exact owner and refuses stale, denied, replaced and unacknowledged effects', async () => {
