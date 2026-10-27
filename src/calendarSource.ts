@@ -40,7 +40,7 @@ export function birthdayItems(contacts: readonly Contact[], startDate: string, e
       if (parts.year && year < parts.year) continue
       // A 29 February birthday is marked on 28 February in common years.
       const day = parts.month === 2 && parts.day === 29 && !isLeapYear(year) ? 28 : parts.day
-      const date = `${year}-${pad(parts.month)}-${pad(day)}`
+      const date = `${String(year).padStart(4, '0')}-${pad(parts.month)}-${pad(day)}`
       if (date < startDate || date > endDate) continue
       const age = parts.year ? year - parts.year : undefined
       items.push({

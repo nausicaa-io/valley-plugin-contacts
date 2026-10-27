@@ -43,6 +43,26 @@ describe('birthdayItems', () => {
     expect(birthdayItems([fern], '1980-01-01', '1990-05-11')).toEqual([])
     expect(birthdayItems([fern], '2026-06-01', '2026-05-01')).toEqual([])
   })
+
+  it('writes four-digit years for ranges that start before year 1000', () => {
+    expect(birthdayItems([yearless], '0001-01-01', '0002-12-31').map((item) => item.date)).toEqual(['0001-12-31', '0002-12-31'])
+  })
+})
+
+describe('registerBirthdaySource range edges', () => {
+  it('returns a valid page for a range that starts at year 0001', async () => {
+    const mock = createMockValleyApi({ manifest: { id: 'contacts' }, settings: { contactsRoot: 'Meadow/Orbit' }, ...cardVault({ 'Meadow/Orbit/Moss.vcf': { firstName: 'Moss', birthdate: '--12-31' } }) })
+    initRuntime(mock.api)
+    off = registerBirthdaySource(mock.api)
+    await getStore(mock.api).ready()
+    const source = mock.api.interop.services.providers(CALENDAR_ITEM_SOURCE_V2)[0]
+    const result = await source.invoke('list', [{ startDate: '0001-01-01', endDate: '0003-12-31', limit: 256 }])
+    expect(result).toMatchObject({ ok: true })
+    expect((result as { value: CalendarItemSourcePage }).value.items.map((item) => item.date)).toEqual(['0001-12-31', '0002-12-31', '0003-12-31'])
+    const whole = await source.invoke('list', [{ startDate: '0001-01-01', endDate: '9999-12-31', limit: 256 }])
+    expect(whole).toMatchObject({ ok: true })
+    expect((whole as { value: CalendarItemSourcePage }).value.items[0].date).toBe('0001-12-31')
+  })
 })
 
 describe('registerBirthdaySource', () => {
