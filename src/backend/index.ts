@@ -5,6 +5,10 @@ import type { FileBaseline, TextDocumentRead } from '@valley/plugin-sdk/types'
 import { deleteContact, readContactDocument, renameContactFile, saveContact, type ContactDocumentOwner } from '../contactDocuments'
 import { emptyContact, parseContactFile } from '../schema'
 
+/** Largest NOTE a command accepts: measured to save and read back well inside one 1000 ms guest CPU turn. */
+export const NOTE_LIMIT = 256 * 1024
+/** Largest set of fields (as JSON text) one create or update accepts, for the same reason: every field is folded and parsed again. */
+export const FIELDS_LIMIT = 384 * 1024
 const text = z.string().max(65536), list = z.array(text).max(1000)
 const path = z.string().min(5).max(4096).regex(/\.[vV][cC][fF]$/).refine(value => !value.startsWith('/') && !value.includes('\\') && !value.includes('\0') && value.split('/').every(part => part && part !== '.' && part !== '..'))
 const baseline = z.object({ mtimeMs: z.number().finite(), size: z.number().int().nonnegative(), hash: z.string().min(1).max(128) }).strict()
@@ -15,7 +19,7 @@ const editable = z.object({
   organization: z.array(z.object({ name: text.optional(), title: text.optional(), dept: text.optional() }).strict()).max(1000),
   email: z.array(method).max(1000), phone: z.array(method).max(1000), place: z.array(method).max(1000),
   socialMedia: z.array(z.object({ platform: text.optional(), handle: text.optional(), url: text.optional() }).strict()).max(1000), websites: list, events: list,
-  lastContact: text, profession: text, note: z.string().max(2 * 1024 * 1024)
+  lastContact: text, profession: text, note: z.string().max(NOTE_LIMIT)
 }).strict()
 export const contactSchema = editable.extend({ relPath: path, fileName: text, displayName: text, uid: text, photo: z.string().max(4 * 1024 * 1024) }).strict()
 export const inputSchemas = {
@@ -37,6 +41,10 @@ export const outputSchemas = {
   'contacts.delete': z.object({ ok: z.literal(true), destination: z.enum(['system', 'vault']), token: z.string().optional(), editorConflict: z.boolean(), recoverySaved: z.boolean() }).strict(),
   'contacts.rename': savedSchema,
   'contacts.restore': z.object({ ok: z.literal(true), restoredPath: z.string() }).strict()
+}
+function bounded<T>(fields: T): T {
+  if (JSON.stringify(fields).length > FIELDS_LIMIT) throw Object.assign(new Error('Contact fields exceed their size limit'), { code: 'RESOURCE_LIMIT', outcome: 'not-applied', retryable: false })
+  return fields
 }
 function conflict(): never { throw Object.assign(new Error('Contact changed; read its current revision before editing'), { code: 'REVISION_CONFLICT', outcome: 'not-applied' }) }
 function rootFor(api: PluginBackendOperationContext['api']): string {
@@ -92,8 +100,8 @@ export function handlers(context: PluginBackendOperationContext) {
       } finally { await observation.dispose() }
     },
     'contacts.read': async (raw: unknown) => { const input = inputSchemas['contacts.read'].parse(raw), value = await read(input.path); return { contact: value.contact, content: value.document.content, baseline: value.baseline } },
-    'contacts.create': async (raw: unknown) => { const input = inputSchemas['contacts.create'].parse(raw), contact = { ...emptyContact(), ...input.fields }; return saved(await saveContact(contact, { fileName: input.fileName }, owner), contact) },
-    'contacts.update': async (raw: unknown) => { const input = inputSchemas['contacts.update'].parse(raw), previous = await read(input.path, input.expected), contact = { ...previous.contact, ...input.patch }; return saved(await saveContact(contact, { previous: previous.contact, document: previous.document, fileName: input.fileName }, owner), contact) },
+    'contacts.create': async (raw: unknown) => { const input = inputSchemas['contacts.create'].parse(raw), contact = { ...emptyContact(), ...bounded(input.fields) }; return saved(await saveContact(contact, { fileName: input.fileName }, owner), contact) },
+    'contacts.update': async (raw: unknown) => { const input = inputSchemas['contacts.update'].parse(raw), patch = bounded(input.patch), previous = await read(input.path, input.expected), contact = { ...previous.contact, ...patch }; return saved(await saveContact(contact, { previous: previous.contact, document: previous.document, fileName: input.fileName }, owner), contact) },
     'contacts.delete': async (raw: unknown) => { const input = inputSchemas['contacts.delete'].parse(raw), previous = await read(input.path, input.expected); return deleteContact(input.path, owner, previous.document) },
     'contacts.rename': async (raw: unknown) => {
       const input = inputSchemas['contacts.rename'].parse(raw), previous = await read(input.path, input.expected)

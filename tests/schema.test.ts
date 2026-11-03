@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   buildContactFile,
   inferRelationType,
@@ -57,12 +57,36 @@ describe('writing vCard 4.0', () => {
     expect(parseContactFile(contact.relPath, text)).toEqual(contact)
   })
 
+  it('folds and reads long values without an encoder call per character', () => {
+    const encode = vi.spyOn(TextEncoder.prototype, 'encode')
+    const contact = { ...parseContactFile('People/Fern.vcf', 'BEGIN:VCARD\r\nVERSION:4.0\r\nUID:fern\r\nFN:Fern\r\nEND:VCARD\r\n'), note: `Moos 🌿 wächst. ${'Grüße aus Wäldern. '.repeat(2000)}`.trim() }
+    const text = buildContactFile(contact)
+    expect(parseContactFile(contact.relPath, text).note).toBe(contact.note)
+    expect(encode).not.toHaveBeenCalled()
+    encode.mockRestore()
+    for (const part of text.split('\r\n')) expect(new TextEncoder().encode(part).length).toBeLessThanOrEqual(75)
+  })
+
+  it('unfolds quoted-printable soft breaks and folded continuations like before', () => {
+    const text = 'BEGIN:VCARD\r\nVERSION:2.1\r\nN:Moss;River\r\nNOTE;ENCODING=QUOTED-PRINTABLE;CHARSET=UTF-8:Gr=C3=BC=\r\n=C3=9Fe aus W=C3=A4l=\r\ndern\r\nX-LONG:one\r\n two\r\n\tthree\r\nEND:VCARD\r\n'
+    const properties = cardsOf(parseVCardFile(text))[0].properties
+    expect(properties.find((entry) => entry.name === 'X-LONG')?.value).toBe('onetwothree')
+    expect(parseContactFile('People/River.vcf', text).note).toBe('Grüße aus Wäldern')
+  })
+
   it('folds long lines at 75 octets without splitting characters', () => {
     const line = `NOTE:${'äöü'.repeat(40)}`
     const folded = foldLine(line)
     for (const part of folded.split('\r\n')) expect(new TextEncoder().encode(part).length).toBeLessThanOrEqual(75)
     expect(folded.replace(/\r\n /g, '')).toBe(line)
     expect(folded).not.toContain('�')
+    const ascii = `NOTE:${'moss '.repeat(100)}`
+    const asciiFolded = foldLine(ascii)
+    expect(asciiFolded.split('\r\n').map((part) => part.length)).toEqual([75, ...Array(Math.ceil((ascii.length - 75) / 74)).fill(75).slice(0, -1), 1 + ((ascii.length - 75) % 74 || 74)])
+    expect(asciiFolded.replace(/\r\n /g, '')).toBe(ascii)
+    const mixed = `NOTE:${'a'.repeat(73)}🌿${'b'.repeat(80)}`
+    for (const part of foldLine(mixed).split('\r\n')) expect(new TextEncoder().encode(part).length).toBeLessThanOrEqual(75)
+    expect(foldLine(mixed).replace(/\r\n /g, '')).toBe(mixed)
   })
 })
 

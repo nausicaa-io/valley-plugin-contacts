@@ -531,7 +531,7 @@
                     },
                     "note": {
                       "type": "string",
-                      "maxLength": 2097152
+                      "maxLength": 262144
                     },
                     "relPath": {
                       "type": "string",
@@ -843,7 +843,7 @@
                     },
                     "note": {
                       "type": "string",
-                      "maxLength": 2097152
+                      "maxLength": 262144
                     }
                   },
                   "additionalProperties": false
@@ -1065,7 +1065,7 @@
                     },
                     "note": {
                       "type": "string",
-                      "maxLength": 2097152
+                      "maxLength": 262144
                     },
                     "relPath": {
                       "type": "string",
@@ -1390,7 +1390,7 @@
                     },
                     "note": {
                       "type": "string",
-                      "maxLength": 2097152
+                      "maxLength": 262144
                     }
                   },
                   "additionalProperties": false,
@@ -1638,7 +1638,7 @@
                     },
                     "note": {
                       "type": "string",
-                      "maxLength": 2097152
+                      "maxLength": 262144
                     },
                     "relPath": {
                       "type": "string",
@@ -2095,7 +2095,7 @@
                     },
                     "note": {
                       "type": "string",
-                      "maxLength": 2097152
+                      "maxLength": 262144
                     },
                     "relPath": {
                       "type": "string",
@@ -2751,7 +2751,7 @@
                             },
                             "note": {
                               "type": "string",
-                              "maxLength": 2097152
+                              "maxLength": 262144
                             },
                             "relPath": {
                               "type": "string",
@@ -3069,7 +3069,7 @@
                         },
                         "note": {
                           "type": "string",
-                          "maxLength": 2097152
+                          "maxLength": 262144
                         },
                         "relPath": {
                           "type": "string",
@@ -3390,7 +3390,7 @@
                             },
                             "note": {
                               "type": "string",
-                              "maxLength": 2097152
+                              "maxLength": 262144
                             },
                             "relPath": {
                               "type": "string",
@@ -3790,7 +3790,7 @@
                         },
                         "note": {
                           "type": "string",
-                          "maxLength": 2097152,
+                          "maxLength": 262144,
                           "title": "note",
                           "ui": {
                             "control": "textarea"
@@ -4024,7 +4024,7 @@
                         },
                         "note": {
                           "type": "string",
-                          "maxLength": 2097152
+                          "maxLength": 262144
                         },
                         "relPath": {
                           "type": "string",
@@ -4352,7 +4352,7 @@
                             },
                             "note": {
                               "type": "string",
-                              "maxLength": 2097152
+                              "maxLength": 262144
                             },
                             "relPath": {
                               "type": "string",
@@ -4762,7 +4762,7 @@
                         },
                         "note": {
                           "type": "string",
-                          "maxLength": 2097152,
+                          "maxLength": 262144,
                           "title": "note",
                           "ui": {
                             "control": "textarea"
@@ -5037,7 +5037,7 @@
                         },
                         "note": {
                           "type": "string",
-                          "maxLength": 2097152
+                          "maxLength": 262144
                         },
                         "relPath": {
                           "type": "string",
@@ -5523,7 +5523,7 @@
                             },
                             "note": {
                               "type": "string",
-                              "maxLength": 2097152
+                              "maxLength": 262144
                             },
                             "relPath": {
                               "type": "string",
@@ -5897,7 +5897,7 @@
                         },
                         "note": {
                           "type": "string",
-                          "maxLength": 2097152
+                          "maxLength": 262144
                         },
                         "relPath": {
                           "type": "string",

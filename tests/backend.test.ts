@@ -4,7 +4,7 @@ import { expect, it, vi } from 'vitest'
 import type { PluginBackendApi, PluginBackendOperationContext } from '@valley/plugin-sdk'
 import type { FileBaseline } from '@valley/plugin-sdk/types'
 import config from '../config.json'
-import { register } from '../src/backend'
+import { FIELDS_LIMIT, NOTE_LIMIT, register } from '../src/backend'
 
 const card = 'BEGIN:VCARD\r\nVERSION:4.0\r\nUID:test-person\r\nFN:River Moss\r\nN:Moss;River;;;\r\nX-CUSTOM:keep-me\r\nPHOTO:data:image/png;base64,AA==\r\nEND:VCARD\r\n'
 function fixture() {
@@ -107,4 +107,20 @@ it('reports a failed rename as an error instead of a completed rename', async ()
   f.api.vault.rename.mockResolvedValueOnce({ ok: false, reason: 'conflict' })
   await expect(f.call('contacts.rename', { path: before.contact.relPath, expected: before.baseline, fileName: 'Renamed' })).rejects.toMatchObject({ code: 'RENAME_CONFLICT', outcome: 'not-applied' })
   expect(f.files.has(before.contact.relPath)).toBe(true)
+})
+
+it('declares a NOTE limit the backend saves inside one guest turn and refuses oversized fields before writing', async () => {
+  const notes = JSON.stringify(config).match(/"note":\{"type":"string","maxLength":\d+/g) ?? []
+  expect(notes.length).toBeGreaterThan(0)
+  for (const note of notes) expect(note.endsWith(`"maxLength":${NOTE_LIMIT}`)).toBe(true)
+  const f = fixture(), before = await f.call('contacts.read', { path: 'People/River Moss.vcf' })
+  const note = 'Moos wächst an der Nordseite. '.repeat(NOTE_LIMIT / 30 + 1).slice(0, NOTE_LIMIT - 1) + '.'
+  const saved = await f.call('contacts.update', { path: before.contact.relPath, expected: before.baseline, patch: { note } })
+  expect(saved.contact.note).toBe(note)
+  const large = Array.from({ length: Math.ceil(FIELDS_LIMIT / 60000) + 1 }, (_, index) => `https://example.org/${index}/${'m'.repeat(60000)}`)
+  const content = f.files.get(saved.contact.relPath)
+  await expect(f.call('contacts.update', { path: saved.contact.relPath, expected: saved.baseline, patch: { websites: large } })).rejects.toMatchObject({ code: 'RESOURCE_LIMIT', outcome: 'not-applied' })
+  await expect(f.call('contacts.create', { fields: { firstName: 'Fern', websites: large } })).rejects.toMatchObject({ code: 'RESOURCE_LIMIT', outcome: 'not-applied' })
+  expect(f.files.get(saved.contact.relPath)).toBe(content)
+  expect(f.files.size).toBe(1)
 })

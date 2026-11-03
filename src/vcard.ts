@@ -30,6 +30,25 @@ export interface VCardFile {
 
 const LINE_LIMIT = 75
 
+/** UTF-8 length of one code point, computed locally: an encoder call per character costs a host round trip in the backend. */
+function utf8Length(codePoint: number): number {
+  return codePoint < 0x80 ? 1 : codePoint < 0x800 ? 2 : codePoint < 0x10000 ? 3 : 4
+}
+
+function utf8Bytes(text: string): number {
+  let bytes = 0
+  for (const char of text) bytes += utf8Length(char.codePointAt(0)!)
+  return bytes
+}
+
+function pushUtf8(bytes: number[], codePoint: number): void {
+  if (codePoint >= 0xd800 && codePoint <= 0xdfff) codePoint = 0xfffd
+  if (codePoint < 0x80) bytes.push(codePoint)
+  else if (codePoint < 0x800) bytes.push(0xc0 | codePoint >> 6, 0x80 | codePoint & 63)
+  else if (codePoint < 0x10000) bytes.push(0xe0 | codePoint >> 12, 0x80 | codePoint >> 6 & 63, 0x80 | codePoint & 63)
+  else bytes.push(0xf0 | codePoint >> 18, 0x80 | codePoint >> 12 & 63, 0x80 | codePoint >> 6 & 63, 0x80 | codePoint & 63)
+}
+
 /** Split a line on a separator outside double quotes. */
 function splitOutsideQuotes(value: string, separator: string, limit = Infinity): string[] {
   const out: string[] = []
@@ -38,9 +57,10 @@ function splitOutsideQuotes(value: string, separator: string, limit = Infinity):
   for (let index = 0; index < value.length; index++) {
     const char = value[index]
     if (char === '"') quoted = !quoted
-    else if (char === separator && !quoted && out.length < limit - 1) {
+    else if (char === separator && !quoted) {
       out.push(value.slice(start, index))
       start = index + 1
+      if (out.length === limit - 1) break
     }
   }
   out.push(value.slice(start))
@@ -83,14 +103,31 @@ export function parseContentLine(line: string): VCardProperty | null {
 
 /** Unfold physical lines (RFC 6350 §3.2 and 2.1 quoted-printable soft breaks). */
 function unfold(lines: string[]): string[] {
-  const out: string[] = []
-  for (const line of lines) {
-    const previous = out.length ? out[out.length - 1] : undefined
-    if (previous !== undefined && (line.startsWith(' ') || line.startsWith('\t'))) out[out.length - 1] = previous + line.slice(1)
-    else if (previous !== undefined && /QUOTED-PRINTABLE/i.test(previous.split(':')[0]) && previous.endsWith('=')) out[out.length - 1] = previous.slice(0, -1) + line
-    else out.push(line)
+  // Collect each logical line's parts and join once: appending to one growing string copies it on every folded line.
+  const out: string[][] = []
+  const head = (parts: string[]): string => {
+    let text = ''
+    for (const part of parts) {
+      const colon = part.indexOf(':')
+      if (colon >= 0) return text + part.slice(0, colon)
+      text += part
+    }
+    return text
   }
-  return out
+  const lastFilled = (parts: string[]): number => {
+    for (let index = parts.length - 1; index >= 0; index--) if (parts[index]) return index
+    return -1
+  }
+  for (const line of lines) {
+    const parts = out.length ? out[out.length - 1] : undefined
+    const last = parts ? lastFilled(parts) : -1
+    if (parts && (line.startsWith(' ') || line.startsWith('\t'))) parts.push(line.slice(1))
+    else if (parts && last >= 0 && parts[last].endsWith('=') && /QUOTED-PRINTABLE/i.test(head(parts))) {
+      parts[last] = parts[last].slice(0, -1)
+      parts.push(line)
+    } else out.push([line])
+  }
+  return out.map((parts) => parts.length === 1 ? parts[0] : parts.join(''))
 }
 
 /** Parse a `.vcf` file. Cards keep their order; text between cards survives. */
@@ -157,7 +194,11 @@ function decodeQuotedPrintable(value: string, charset: string): string {
       bytes.push(parseInt(value.slice(index + 1, index + 3), 16))
       index += 2
     } else if (char === '=' && index === value.length - 1) continue
-    else for (const byte of new TextEncoder().encode(char)) bytes.push(byte)
+    else {
+      const codePoint = value.codePointAt(index)!
+      pushUtf8(bytes, codePoint)
+      if (codePoint > 0xffff) index++
+    }
   }
   try {
     return new TextDecoder(charset || 'utf-8').decode(new Uint8Array(bytes))
@@ -262,23 +303,31 @@ function formatLine(property: VCardProperty): string {
 
 /** Fold to 75 octets per physical line without splitting a UTF-8 character. */
 export function foldLine(line: string, newline = '\r\n'): string {
-  const encoder = new TextEncoder()
-  if (encoder.encode(line).length <= LINE_LIMIT) return line
+  if (line.length <= LINE_LIMIT / 4) return line
+  if (!/[^\x00-\x7f]/.test(line)) {
+    if (line.length <= LINE_LIMIT) return line
+    const chunks = [line.slice(0, LINE_LIMIT)]
+    for (let index = LINE_LIMIT; index < line.length; index += LINE_LIMIT - 1) chunks.push(` ${line.slice(index, index + LINE_LIMIT - 1)}`)
+    return chunks.join(newline)
+  }
+  if (utf8Bytes(line) <= LINE_LIMIT) return line
   const out: string[] = []
-  let current = ''
+  let start = 0
   let bytes = 0
-  for (const char of line) {
-    const size = encoder.encode(char).length
+  for (let index = 0; index < line.length;) {
+    const codePoint = line.codePointAt(index)!
+    const width = codePoint > 0xffff ? 2 : 1
+    const size = utf8Length(codePoint)
     const limit = out.length ? LINE_LIMIT - 1 : LINE_LIMIT
     if (bytes + size > limit) {
-      out.push(current)
-      current = ''
+      out.push(line.slice(start, index))
+      start = index
       bytes = 0
     }
-    current += char
     bytes += size
+    index += width
   }
-  out.push(current)
+  out.push(line.slice(start))
   return out.map((part, index) => index ? ` ${part}` : part).join(newline)
 }
 
