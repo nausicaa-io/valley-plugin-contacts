@@ -15,6 +15,8 @@ export interface VCardProperty {
   value: string
   /** The unfolded original line; written back verbatim while unchanged. */
   line?: string
+  /** The original physical lines of `line`, written back as they were so an unchanged photo is never refolded. */
+  physical?: string[]
 }
 
 export interface VCardCard {
@@ -101,10 +103,26 @@ export function parseContentLine(line: string): VCardProperty | null {
   return { group, name, params, value: rest[0], line }
 }
 
-/** Unfold physical lines (RFC 6350 §3.2 and 2.1 quoted-printable soft breaks). */
-function unfold(lines: string[]): string[] {
+/**
+ * Physical lines of a file. A regular-expression split costs about 90 ms per MiB in the backend guest; a string split
+ * plus a scan for the rare lone CR keeps a card with a large photo well inside one CPU turn.
+ */
+function physicalLines(text: string): string[] {
+  const lines = text.split('\n')
+  if (text.indexOf('\r') < 0) return lines
+  const out: string[] = []
+  for (const line of lines) {
+    const bare = line.endsWith('\r') ? line.slice(0, -1) : line
+    if (bare.indexOf('\r') < 0) out.push(bare)
+    else for (const part of bare.split('\r')) out.push(part)
+  }
+  return out
+}
+
+/** Unfold physical lines (RFC 6350 §3.2 and 2.1 quoted-printable soft breaks); each logical line keeps its physical lines. */
+function unfold(lines: string[]): Array<{ text: string; physical: string[] }> {
   // Collect each logical line's parts and join once: appending to one growing string copies it on every folded line.
-  const out: string[][] = []
+  const out: string[][] = [], sources: string[][] = []
   const head = (parts: string[]): string => {
     let text = ''
     for (const part of parts) {
@@ -121,26 +139,27 @@ function unfold(lines: string[]): string[] {
   for (const line of lines) {
     const parts = out.length ? out[out.length - 1] : undefined
     const last = parts ? lastFilled(parts) : -1
-    if (parts && (line.startsWith(' ') || line.startsWith('\t'))) parts.push(line.slice(1))
+    if (parts && (line.startsWith(' ') || line.startsWith('\t'))) { parts.push(line.slice(1)); sources[sources.length - 1].push(line) }
     else if (parts && last >= 0 && parts[last].endsWith('=') && /QUOTED-PRINTABLE/i.test(head(parts))) {
       parts[last] = parts[last].slice(0, -1)
       parts.push(line)
-    } else out.push([line])
+      sources[sources.length - 1].push(line)
+    } else { out.push([line]); sources.push([line]) }
   }
-  return out.map((parts) => parts.length === 1 ? parts[0] : parts.join(''))
+  return out.map((parts, index) => ({ text: parts.length === 1 ? parts[0] : parts.join(''), physical: sources[index] }))
 }
 
 /** Parse a `.vcf` file. Cards keep their order; text between cards survives. */
 export function parseVCardFile(source: string): VCardFile {
-  const text = source.replace(/^\uFEFF/, '')
-  const newline = /\r\n/.test(text) ? '\r\n' : '\n'
-  const physical = text.split(/\r\n|\n|\r/)
+  const text = source.charCodeAt(0) === 0xfeff ? source.slice(1) : source
+  const newline = text.indexOf('\r\n') >= 0 ? '\r\n' : '\n'
+  const physical = physicalLines(text)
   const segments: VCardFile['segments'] = []
   let pending: string[] = []
   let card: { lines: string[]; start: string[] } | null = null
   let depth = 0
   for (const line of physical) {
-    const bare = line.trim().toUpperCase()
+    const bare = line.length <= 64 ? line.trim().toUpperCase() : ''
     if (!card) {
       if (bare === 'BEGIN:VCARD') {
         if (pending.length) segments.push({ kind: 'text', text: pending.join(newline) })
@@ -152,8 +171,11 @@ export function parseVCardFile(source: string): VCardFile {
     }
     if (bare === 'BEGIN:VCARD') depth++
     if (bare === 'END:VCARD' && --depth === 0) {
-      const lines = unfold(card.lines)
-      const properties = lines.map(parseContentLine).filter((value): value is VCardProperty => value !== null)
+      const properties: VCardProperty[] = []
+      for (const logical of unfold(card.lines)) {
+        const parsed = parseContentLine(logical.text)
+        if (parsed) properties.push(logical.physical.length > 1 ? { ...parsed, physical: logical.physical } : parsed)
+      }
       segments.push({ kind: 'card', card: { properties }, text: [...card.start, ...card.lines, line].join(newline) })
       card = null
       continue
@@ -265,15 +287,23 @@ export function typesOf(property: VCardProperty): string[] {
   return param(property, 'TYPE').flatMap((value) => value.split(',')).map((value) => value.trim().toLowerCase()).filter(Boolean)
 }
 
-/** Base64 photos as data URIs; `data:` values pass through. */
+/**
+ * `value` without whitespace. A photo can be several MiB: native searches for the ASCII spaces cost almost nothing in
+ * the backend guest, a regular-expression scan about 17 ms per MiB, so the value is only rewritten when it has some.
+ */
+function withoutWhitespace(value: string): string {
+  return [' ', '\t', '\n', '\r', '\f', '\v'].some((space) => value.indexOf(space) >= 0) ? value.replace(/\s+/g, '') : value
+}
+
+/** Base64 photos as data URIs; `data:` values pass through. Only the prefix is matched, never the whole photo. */
 export function photoDataUri(property: VCardProperty): string {
   const value = property.value.trim()
-  if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(value)) return value.replace(/\s+/g, '')
+  if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(value.slice(0, 128))) return withoutWhitespace(value)
   const encoding = (param(property, 'ENCODING')[0] ?? '').toUpperCase()
   if (encoding !== 'B' && encoding !== 'BASE64') return ''
   const type = (typesOf(property).find((entry) => /^(jpeg|jpg|png|gif|webp)$/.test(entry)) ?? 'jpeg').replace('jpg', 'jpeg')
-  const data = value.replace(/\s+/g, '')
-  return /^[A-Za-z0-9+/=]+$/.test(data) ? `data:image/${type};base64,${data}` : ''
+  const data = withoutWhitespace(value)
+  return data && !/[^A-Za-z0-9+/=]/.test(data) ? `data:image/${type};base64,${data}` : ''
 }
 
 // --- Writing --------------------------------------------------------------
@@ -334,6 +364,6 @@ export function foldLine(line: string, newline = '\r\n'): string {
 export function serializeCard(card: VCardCard, newline = '\r\n'): string {
   const body = card.properties
     .filter((entry) => entry.name !== 'BEGIN' && entry.name !== 'END')
-    .map((entry) => foldLine(formatLine(entry), newline))
+    .map((entry) => entry.line !== undefined && entry.physical ? entry.physical.join(newline) : foldLine(formatLine(entry), newline))
   return ['BEGIN:VCARD', ...body, 'END:VCARD'].join(newline)
 }

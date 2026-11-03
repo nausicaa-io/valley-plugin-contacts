@@ -239,3 +239,11 @@ describe('buildRelationGraph', () => {
     expect(buildRelationGraph([chanterelle, oak], { typeFilter: new Set(['work']) }).edges).toHaveLength(0)
   })
 })
+
+it('splits CRLF, LF and lone CR line breaks like the vCard grammar', () => {
+  const file = parseVCardFile('﻿BEGIN:VCARD\rVERSION:4.0\r\nFN:River\r\r\nNOTE:Pond\n  edge\nEND:VCARD\r\n')
+  const card = cardsOf(file)[0]
+  expect(file.newline).toBe('\r\n')
+  expect(card.properties.map((entry) => [entry.name, entry.value])).toEqual([['VERSION', '4.0'], ['FN', 'River'], ['NOTE', 'Pond edge']])
+  expect(card.properties[2].physical).toEqual(['NOTE:Pond', '  edge'])
+})

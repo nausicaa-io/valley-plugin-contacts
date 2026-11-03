@@ -4,7 +4,8 @@ import { expect, it, vi } from 'vitest'
 import type { PluginBackendApi, PluginBackendOperationContext } from '@valley/plugin-sdk'
 import type { FileBaseline } from '@valley/plugin-sdk/types'
 import config from '../config.json'
-import { FIELDS_LIMIT, NOTE_LIMIT, register } from '../src/backend'
+import { FIELDS_LIMIT, NOTE_LIMIT, RESULT_LIMIT, register } from '../src/backend'
+import { foldLine } from '../src/vcard'
 
 const card = 'BEGIN:VCARD\r\nVERSION:4.0\r\nUID:test-person\r\nFN:River Moss\r\nN:Moss;River;;;\r\nX-CUSTOM:keep-me\r\nPHOTO:data:image/png;base64,AA==\r\nEND:VCARD\r\n'
 function fixture() {
@@ -43,7 +44,8 @@ function fixture() {
     expect(validateOutput(result), JSON.stringify(validateOutput.errors)).toBe(true)
     return result
   }
-  return { files, api, controller, call, setDirty: () => { dirty = true } }
+  const raw = (name: string, input: unknown): Promise<any> => Promise.resolve(registrations.get(`command.${name}`)!(input, context))
+  return { files, api, controller, call, raw, setDirty: () => { dirty = true } }
 }
 
 it('registers concrete input and output contracts for every supported data operation', () => {
@@ -123,4 +125,46 @@ it('declares a NOTE limit the backend saves inside one guest turn and refuses ov
   await expect(f.call('contacts.create', { fields: { firstName: 'Fern', websites: large } })).rejects.toMatchObject({ code: 'RESOURCE_LIMIT', outcome: 'not-applied' })
   expect(f.files.get(saved.contact.relPath)).toBe(content)
   expect(f.files.size).toBe(1)
+})
+
+it('refuses unknown files, the configuration folder, malformed input and foreign trash receipts as not applied before any effect', async () => {
+  const f = fixture(), before = await f.call('contacts.read', { path: 'People/River Moss.vcf' })
+  const refused = (code: string) => ({ code, outcome: 'not-applied', retryable: false })
+  await expect(f.call('contacts.update', { path: '.valley/plugins/data/calendar/River.vcf', expected: before.baseline, patch: { note: 'X' } })).rejects.toMatchObject(refused('PATH_REFUSED'))
+  await expect(f.call('contacts.read', { path: '.Valley/River.vcf' })).rejects.toMatchObject(refused('PATH_REFUSED'))
+  await expect(f.call('contacts.update', { path: 'People/Missing.vcf', expected: before.baseline, patch: { note: 'X' } })).rejects.toMatchObject(refused('NOT_FOUND'))
+  await expect(f.call('contacts.delete', { path: 'People/Missing.vcf', expected: before.baseline })).rejects.toMatchObject(refused('NOT_FOUND'))
+  await expect(f.raw('contacts.update', { path: 'People/River Moss.vcf', expected: before.baseline, patch: {} })).rejects.toMatchObject(refused('INVALID_INPUT'))
+  await expect(f.raw('contacts.read', { path: 'People/River Moss.txt' })).rejects.toMatchObject(refused('INVALID_INPUT'))
+  await expect(f.call('contacts.restore', { token: 'forged-receipt' })).rejects.toMatchObject(refused('RESTORE_TOKEN_UNKNOWN'))
+  expect(f.api.vault.write).not.toHaveBeenCalled()
+  expect(f.api.vault.restore).not.toHaveBeenCalled()
+  const removed = await f.call('contacts.delete', { path: before.contact.relPath, expected: before.baseline })
+  f.files.set(before.contact.relPath, card)
+  await expect(f.call('contacts.restore', { token: removed.token })).rejects.toMatchObject(refused('RESTORE_CONFLICT'))
+  f.files.delete(before.contact.relPath)
+  expect((await f.call('contacts.restore', { token: removed.token })).restoredPath).toBe(before.contact.relPath)
+})
+
+it('keeps a large photo byte for byte without refolding it and refuses results the host cannot carry before writing', async () => {
+  const f = fixture(), path = 'People/River Moss.vcf'
+  // Folded at 60 characters, as some address books do: an update must leave these lines exactly as they are.
+  const photo = `PHOTO:data:image/jpeg;base64,${'ABCD'.repeat(400 * 1024)}`
+  const folded = photo.match(/.{1,60}/g)!.map((line, index) => index ? ` ${line}` : line).join('\r\n')
+  f.files.set(path, card.replace('PHOTO:data:image/png;base64,AA==', folded))
+  const before = await f.call('contacts.read', { path })
+  expect(before.contact.photo).toBe(photo.slice('PHOTO:'.length))
+  const saved = await f.call('contacts.update', { path, expected: before.baseline, patch: { note: 'Seen at the pond' } })
+  expect(f.files.get(path)).toContain(`\r\n${folded}\r\n`)
+  expect(f.files.get(path)).not.toContain(foldLine(photo))
+  expect(saved.contact.photo).toBe(before.contact.photo)
+  const huge = `PHOTO:data:image/jpeg;base64,${'ABCD'.repeat(RESULT_LIMIT / 4)}`
+  f.files.set(path, card.replace('PHOTO:data:image/png;base64,AA==', foldLine(huge)))
+  const content = f.files.get(path)!
+  await expect(f.call('contacts.read', { path })).rejects.toMatchObject({ code: 'RESOURCE_LIMIT', outcome: 'not-applied' })
+  const writes = f.api.vault.write.mock.calls.length
+  const current = { mtimeMs: 1, size: Buffer.byteLength(content), hash: createHash('sha256').update(content).digest('hex') }
+  await expect(f.call('contacts.update', { path, expected: current, patch: { note: 'Too large to answer' } })).rejects.toMatchObject({ code: 'RESOURCE_LIMIT', outcome: 'not-applied' })
+  expect(f.api.vault.write.mock.calls.length).toBe(writes)
+  expect(f.files.get(path)).toBe(content)
 })

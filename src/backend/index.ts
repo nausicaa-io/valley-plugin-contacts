@@ -2,13 +2,20 @@ import { createWorkflowAdapter } from './workflow'
 import { z } from 'zod'
 import type { PluginBackendApi, PluginBackendOperationContext } from '@valley/plugin-sdk'
 import type { FileBaseline, TextDocumentRead } from '@valley/plugin-sdk/types'
-import { deleteContact, readContactDocument, renameContactFile, saveContact, type ContactDocumentOwner } from '../contactDocuments'
+import { CONFIG_DIR } from '@valley/plugin-sdk/paths'
+import { deleteContact, renameContactFile, saveContact, type ContactDocumentOwner } from '../contactDocuments'
 import { emptyContact, parseContactFile } from '../schema'
 
 /** Largest NOTE a command accepts: measured to save and read back well inside one 1000 ms guest CPU turn. */
 export const NOTE_LIMIT = 256 * 1024
 /** Largest set of fields (as JSON text) one create or update accepts, for the same reason: every field is folded and parsed again. */
 export const FIELDS_LIMIT = 384 * 1024
+/**
+ * Largest encoded result an operation returns: the host carries at most 4 MiB less 4 KiB, and a larger result after a
+ * write would leave its outcome unknown. A read returns the file text and its photo, so a card with a photo above about
+ * 2 MiB is refused before it is returned, and a save whose result would not fit is refused before writing.
+ */
+export const RESULT_LIMIT = 4 * 1024 * 1024 - 64 * 1024
 const text = z.string().max(65536), list = z.array(text).max(1000)
 const path = z.string().min(5).max(4096).regex(/\.[vV][cC][fF]$/).refine(value => !value.startsWith('/') && !value.includes('\\') && !value.includes('\0') && value.split('/').every(part => part && part !== '.' && part !== '..'))
 const baseline = z.object({ mtimeMs: z.number().finite(), size: z.number().int().nonnegative(), hash: z.string().min(1).max(128) }).strict()
@@ -46,6 +53,33 @@ function bounded<T>(fields: T): T {
   if (JSON.stringify(fields).length > FIELDS_LIMIT) throw Object.assign(new Error('Contact fields exceed their size limit'), { code: 'RESOURCE_LIMIT', outcome: 'not-applied', retryable: false })
   return fields
 }
+const refused = (code: string, message: string): Error => Object.assign(new Error(message), { code, outcome: 'not-applied' as const, retryable: false })
+/**
+ * UTF-8 bytes of the result envelope the host encodes. Only the non-ASCII remainder is walked character by character:
+ * a photo is several MiB of ASCII, and a per-character loop over it costs more than the whole read.
+ */
+function encodedBytes(value: unknown): number {
+  // Match single characters: a run quantifier over MiBs of ASCII exhausts the guest's regular-expression memory.
+  const json = JSON.stringify({ value }), wide = json.match(/[^\x00-\x7f]/g) ?? []
+  let bytes = json.length
+  for (const char of wide) {
+    const code = char.charCodeAt(0)
+    bytes += code < 0x800 || (code >= 0xd800 && code <= 0xdbff) ? 1 : 2
+  }
+  return bytes
+}
+/** Refuses before any effect when `value` would not fit in an operation result. */
+function fits<T>(value: T): T {
+  if (encodedBytes(value) > RESULT_LIMIT) throw refused('RESOURCE_LIMIT', 'This contact is too large to return through a command; open it in Contacts')
+  return value
+}
+function parse<M extends keyof typeof inputSchemas>(method: M, raw: unknown): z.infer<(typeof inputSchemas)[M]> {
+  const result = inputSchemas[method].safeParse(raw)
+  if (!result.success) throw refused('INVALID_INPUT', result.error.issues.map(issue => `${issue.path.join('.') || 'input'}: ${issue.message}`).join('; ').slice(0, 1000))
+  const path = (result.data as { path?: unknown }).path
+  if (typeof path === 'string' && path.split('/')[0].toLowerCase() === CONFIG_DIR) throw refused('PATH_REFUSED', 'Contacts cannot use files in the vault configuration folder')
+  return result.data as z.infer<(typeof inputSchemas)[M]>
+}
 function conflict(): never { throw Object.assign(new Error('Contact changed; read its current revision before editing'), { code: 'REVISION_CONFLICT', outcome: 'not-applied' }) }
 function rootFor(api: PluginBackendOperationContext['api']): string {
   const value = api.settings.get().contactsRoot
@@ -72,10 +106,15 @@ function documentOwner(context: PluginBackendOperationContext) {
   }
   return { owner, baselineFor: (document: TextDocumentRead | null) => document ? receipts.get(document.revisionToken)?.baseline ?? null : null }
 }
-export function handlers(context: PluginBackendOperationContext) {
+/** Trash receipts this backend issued; the host accepts only its own session's receipts, so any other token is refused before the call. */
+export interface ContactSession { trashTokens: Set<string> }
+export function handlers(context: PluginBackendOperationContext, session: ContactSession = { trashTokens: new Set() }) {
   const { owner, baselineFor } = documentOwner(context)
   const read = async (file: string, expected?: FileBaseline) => {
-    const document = await readContactDocument(file, owner), observed = baselineFor(document)!
+    owner.assertCurrent()
+    const document = await owner.vault.readTextDocument(file)
+    if (!document) throw refused('NOT_FOUND', 'Contact file does not exist')
+    const observed = baselineFor(document)!
     if (expected && (expected.hash !== observed.hash || expected.size !== observed.size)) conflict()
     return { document, contact: parseContactFile(file, document.content), baseline: observed }
   }
@@ -85,7 +124,7 @@ export function handlers(context: PluginBackendOperationContext) {
   }
   return {
     'contacts.list': async (raw: unknown) => {
-      const input = inputSchemas['contacts.list'].parse(raw), root = rootFor(context.api)
+      const input = parse('contacts.list', raw), root = rootFor(context.api)
       const observation = await context.api.index.observe({ extensions: ['.vcf'], ...(root ? { pathPrefix: root } : {}), fields: [] }, () => {})
       try {
         const page = await observation.read({ offset: input.offset, limit: input.limit })
@@ -99,24 +138,39 @@ export function handlers(context: PluginBackendOperationContext) {
         return { contacts, errors, next: page.next }
       } finally { await observation.dispose() }
     },
-    'contacts.read': async (raw: unknown) => { const input = inputSchemas['contacts.read'].parse(raw), value = await read(input.path); return { contact: value.contact, content: value.document.content, baseline: value.baseline } },
-    'contacts.create': async (raw: unknown) => { const input = inputSchemas['contacts.create'].parse(raw), contact = { ...emptyContact(), ...bounded(input.fields) }; return saved(await saveContact(contact, { fileName: input.fileName }, owner), contact) },
-    'contacts.update': async (raw: unknown) => { const input = inputSchemas['contacts.update'].parse(raw), patch = bounded(input.patch), previous = await read(input.path, input.expected), contact = { ...previous.contact, ...patch }; return saved(await saveContact(contact, { previous: previous.contact, document: previous.document, fileName: input.fileName }, owner), contact) },
-    'contacts.delete': async (raw: unknown) => { const input = inputSchemas['contacts.delete'].parse(raw), previous = await read(input.path, input.expected); return deleteContact(input.path, owner, previous.document) },
+    'contacts.read': async (raw: unknown) => { const input = parse('contacts.read', raw), value = await read(input.path); return fits({ contact: value.contact, content: value.document.content, baseline: value.baseline }) },
+    'contacts.create': async (raw: unknown) => { const input = parse('contacts.create', raw), contact = { ...emptyContact(), ...bounded(input.fields) }; return saved(await saveContact(contact, { fileName: input.fileName }, owner), contact) },
+    'contacts.update': async (raw: unknown) => { const input = parse('contacts.update', raw), patch = bounded(input.patch), previous = await read(input.path, input.expected), contact = { ...previous.contact, ...patch }; fits({ contact, baseline: previous.baseline, editorConflict: false }); return saved(await saveContact(contact, { previous: previous.contact, document: previous.document, fileName: input.fileName }, owner), contact) },
+    'contacts.delete': async (raw: unknown) => {
+      const input = parse('contacts.delete', raw), previous = await read(input.path, input.expected), result = await deleteContact(input.path, owner, previous.document)
+      if (result.token) session.trashTokens.add(result.token)
+      return result
+    },
     'contacts.rename': async (raw: unknown) => {
-      const input = inputSchemas['contacts.rename'].parse(raw), previous = await read(input.path, input.expected)
+      const input = parse('contacts.rename', raw), previous = await read(input.path, input.expected)
+      fits({ contact: previous.contact, baseline: previous.baseline, editorConflict: false })
       const result = await renameContactFile(input.path, input.fileName, previous.document, owner)
       return { contact: result.document ? parseContactFile(result.relPath, result.document.content) : { ...previous.contact, relPath: result.relPath }, baseline: baselineFor(result.document), editorConflict: !result.document }
     },
     'contacts.restore': async (raw: unknown) => {
-      const input = inputSchemas['contacts.restore'].parse(raw), result = await context.api.vault.restore(input.token)
-      if (!result.ok || !result.restoredPath) throw Object.assign(new Error(result.message ?? 'Contact could not be restored'), { code: 'RESTORE_CONFLICT' })
+      const input = parse('contacts.restore', raw)
+      if (!session.trashTokens.has(input.token)) throw refused('RESTORE_TOKEN_UNKNOWN', 'This trash receipt was not issued by the running Contacts backend')
+      const result = await context.api.vault.restore(input.token)
+      if (!result.ok) throw refused('RESTORE_CONFLICT', result.message ?? 'Contact could not be restored')
+      session.trashTokens.delete(input.token)
+      if (!result.restoredPath) throw Object.assign(new Error('Contact restore returned no path'), { code: 'RESTORE_CONFLICT' })
       return { ok: true as const, restoredPath: result.restoredPath }
     }
   }
 }
 export function register(api: PluginBackendApi): () => void {
   const workflow = createWorkflowAdapter(api)
-  const disposers = Object.keys(inputSchemas).map(method => workflow.operation(`command.${method}`, (input, context) => handlers(context)[method as keyof typeof inputSchemas](input)))
+  const session: ContactSession = { trashTokens: new Set() }
+  const disposers = Object.keys(inputSchemas).map(method => workflow.operation(`command.${method}`, async (input, context) => {
+    const value = await handlers(context, session)[method as keyof typeof inputSchemas](input)
+    // The host encodes the result in the turn the operation resolves in; a large one (a photo) gets that turn to itself.
+    await new Promise<void>(resolve => setTimeout(resolve, 0))
+    return value
+  }))
   return () => { workflow.dispose(); disposers.forEach(dispose => dispose()) }
 }
