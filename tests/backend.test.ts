@@ -168,3 +168,15 @@ it('keeps a large photo byte for byte without refolding it and refuses results t
   expect(f.api.vault.write.mock.calls.length).toBe(writes)
   expect(f.files.get(path)).toBe(content)
 })
+
+it('never creates or renames a contact into a hidden dot file, even when a traversal name leaves a leading space', async () => {
+  const f = fixture()
+  for (const fileName of ['.hidden', '../.valley/plugins/data/todo/evil', ' . .Fern', '...']) {
+    const created = await f.call('contacts.create', { fields: { firstName: 'Fern' }, fileName })
+    expect(created.contact.relPath.split('/').pop()).not.toMatch(/^[.\s]/)
+  }
+  const before = await f.call('contacts.read', { path: 'People/River Moss.vcf' })
+  const renamed = await f.call('contacts.rename', { path: 'People/River Moss.vcf', expected: before.baseline, fileName: '../.River' })
+  expect(renamed.contact.relPath).toBe('People/River.vcf')
+  expect([...f.files.keys()].filter(path => /\/[.\s]/.test(path))).toEqual([])
+})

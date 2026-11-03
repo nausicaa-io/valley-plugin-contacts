@@ -14,7 +14,8 @@ export interface ContactDocumentOwner {
 }
 
 export function sanitizeFileName(name: string): string {
-  return name.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').replace(/^\.+/, '').trim()
+  // Leading dots and spaces together: a name such as "../.x" must not become the hidden dot file ".x".
+  return name.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').replace(/^[\s.]+/, '').trim()
 }
 
 /** The file name (no extension) a contact's note is named after. */
