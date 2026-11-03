@@ -149,7 +149,7 @@ it('refuses unknown files, the configuration folder, malformed input and foreign
 it('keeps a large photo byte for byte without refolding it and refuses results the host cannot carry before writing', async () => {
   const f = fixture(), path = 'People/River Moss.vcf'
   // Folded at 60 characters, as some address books do: an update must leave these lines exactly as they are.
-  const photo = `PHOTO:data:image/jpeg;base64,${'ABCD'.repeat(400 * 1024)}`
+  const photo = `PHOTO:data:image/jpeg;base64,${'ABCD'.repeat(100 * 1024)}`
   const folded = photo.match(/.{1,60}/g)!.map((line, index) => index ? ` ${line}` : line).join('\r\n')
   f.files.set(path, card.replace('PHOTO:data:image/png;base64,AA==', folded))
   const before = await f.call('contacts.read', { path })

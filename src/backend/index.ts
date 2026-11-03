@@ -11,11 +11,11 @@ export const NOTE_LIMIT = 256 * 1024
 /** Largest set of fields (as JSON text) one create or update accepts, for the same reason: every field is folded and parsed again. */
 export const FIELDS_LIMIT = 384 * 1024
 /**
- * Largest encoded result an operation returns: the host carries at most 4 MiB less 4 KiB, and a larger result after a
- * write would leave its outcome unknown. A read returns the file text and its photo, so a card with a photo above about
- * 2 MiB is refused before it is returned, and a save whose result would not fit is refused before writing.
+ * Largest encoded result a command returns. The command bus carries an ordinary command's result up to 1 MiB and a larger
+ * one after a write leaves its outcome unknown, so a save whose result would not fit is refused before writing. A read
+ * returns the file text and its photo, so it is refused for a photo above about 500 KiB; the Contacts view is not limited.
  */
-export const RESULT_LIMIT = 4 * 1024 * 1024 - 64 * 1024
+export const RESULT_LIMIT = 1024 * 1024 - 16 * 1024
 const text = z.string().max(65536), list = z.array(text).max(1000)
 const path = z.string().min(5).max(4096).regex(/\.[vV][cC][fF]$/).refine(value => !value.startsWith('/') && !value.includes('\\') && !value.includes('\0') && value.split('/').every(part => part && part !== '.' && part !== '..'))
 const baseline = z.object({ mtimeMs: z.number().finite(), size: z.number().int().nonnegative(), hash: z.string().min(1).max(128) }).strict()
