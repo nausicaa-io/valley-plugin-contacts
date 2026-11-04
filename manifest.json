@@ -2,7 +2,7 @@
   "apiVersion": 5,
   "id": "contacts",
   "name": "Contacts",
-  "version": "3.0.5",
+  "version": "3.0.6",
   "description": "Address book over vCard files in your vault: ordered groups with colors, cover-aware structured contact cards, typed relations, birthdays in Calendar, and a force-directed relationship graph.",
   "author": [
     "nausicaa"

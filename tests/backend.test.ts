@@ -146,6 +146,27 @@ it('refuses unknown files, the configuration folder, malformed input and foreign
   expect((await f.call('contacts.restore', { token: removed.token })).restoredPath).toBe(before.contact.relPath)
 })
 
+it('reports every refusal that precedes a vault effect as not applied, and keeps an attempted effect uncertain', async () => {
+  const f = fixture(), before = await f.call('contacts.read', { path: 'People/River Moss.vcf' })
+  f.files.set('People/Broken.vcf', 'not a vCard')
+  const broken = await f.raw('contacts.read', { path: 'People/Broken.vcf' }).catch(error => error)
+  expect(broken).toMatchObject({ code: 'INVALID_CONTACT', outcome: 'not-applied' })
+  const any = { mtimeMs: 1, size: 11, hash: createHash('sha256').update('not a vCard').digest('hex') }
+  await expect(f.call('contacts.update', { path: 'People/Broken.vcf', expected: any, patch: { note: 'X' } })).rejects.toMatchObject({ code: 'INVALID_CONTACT', outcome: 'not-applied' })
+  await expect(f.call('contacts.delete', { path: 'People/Broken.vcf', expected: any })).rejects.toMatchObject({ code: 'INVALID_CONTACT', outcome: 'not-applied' })
+  await expect(f.call('contacts.rename', { path: 'People/Broken.vcf', expected: any, fileName: 'Fixed' })).rejects.toMatchObject({ code: 'INVALID_CONTACT', outcome: 'not-applied' })
+  f.api.vault.trash.mockResolvedValueOnce({ ok: false, reason: 'conflict' })
+  await expect(f.call('contacts.delete', { path: before.contact.relPath, expected: before.baseline })).rejects.toMatchObject({ code: 'REVISION_CONFLICT', outcome: 'not-applied' })
+  expect(f.api.vault.write).not.toHaveBeenCalled()
+  expect(f.files.get('People/Broken.vcf')).toBe('not a vCard')
+  expect(f.files.get(before.contact.relPath)).toBe(card)
+  f.api.vault.write.mockRejectedValueOnce(new Error('Vault write failed'))
+  await expect(f.call('contacts.update', { path: before.contact.relPath, expected: before.baseline, patch: { note: 'X' } })).rejects.not.toMatchObject({ outcome: 'not-applied' })
+  f.controller.abort()
+  await expect(f.call('contacts.update', { path: before.contact.relPath, expected: before.baseline, patch: { note: 'Cancelled' } })).rejects.toMatchObject({ outcome: 'not-applied' })
+  expect(f.files.get(before.contact.relPath)).toBe(card)
+})
+
 it('keeps a large photo byte for byte without refolding it and refuses results the host cannot carry before writing', async () => {
   const f = fixture(), path = 'People/River Moss.vcf'
   // Folded at 60 characters, as some address books do: an update must leave these lines exactly as they are.

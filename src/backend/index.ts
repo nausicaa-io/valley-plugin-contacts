@@ -87,7 +87,8 @@ function rootFor(api: PluginBackendOperationContext['api']): string {
   return root === '.' || root === '/' ? '' : root
 }
 function documentOwner(context: PluginBackendOperationContext) {
-  let committed = false
+  let committed = false, attempted = false
+  const attempt = () => { attempted = true }
   const mutationResult = <T extends { ok: boolean }>(result: T): T => { if (result.ok) committed = true; return result }
   const receipts = new Map<string, { path: string; content: string; baseline: FileBaseline }>()
   const issue = (path: string, content: string, baseline: FileBaseline): TextDocumentRead => { const revisionToken = crypto.randomUUID(); receipts.set(revisionToken, { path, content, baseline }); return { content, revisionToken } }
@@ -98,31 +99,38 @@ function documentOwner(context: PluginBackendOperationContext) {
     vault: {
       stat: file => context.api.vault.stat(file),
       readTextDocument: async file => { assertCurrent(); const value = await context.api.vault.read(file); assertCurrent(); return value?.baseline ? issue(file, value.content, value.baseline) : null },
-      createTextDocumentGuarded: async (file, content) => { assertCurrent(); const result = mutationResult(await context.api.vault.write(file, content, null)); return result.ok ? { ok: true, revisionToken: issue(file, content, result.baseline).revisionToken, editorConflict: false } : result },
-      writeTextDocumentGuarded: async (file, content, token) => { const previous = take(file, token); assertCurrent(); const result = mutationResult(await context.api.vault.write(file, content, previous.baseline)); return result.ok ? { ok: true, revisionToken: issue(file, content, result.baseline).revisionToken, editorConflict: false } : result },
-      renameTextDocumentGuarded: async (file, target, token) => { const previous = take(file, token); assertCurrent(); const result = await context.api.vault.rename(file, target, previous.baseline); if (!result.ok) throw Object.assign(new Error(`Contact rename failed: ${result.reason}`), { code: 'RENAME_CONFLICT', outcome: committed ? 'unknown' : 'not-applied' }); mutationResult(result); return result.ok ? { ok: true, relPath: result.relPath, revisionToken: result.baseline.hash === previous.baseline.hash ? issue(result.relPath, previous.content, result.baseline).revisionToken : null, editorConflict: result.baseline.hash !== previous.baseline.hash } : result },
-      trashTextDocumentGuarded: async (file, token) => { const previous = take(file, token); assertCurrent(); const result = await context.api.vault.trash(file, previous.baseline); return result.ok ? { ...result, editorConflict: false, recoverySaved: true } : result }
+      createTextDocumentGuarded: async (file, content) => { assertCurrent(); attempt(); const result = mutationResult(await context.api.vault.write(file, content, null)); return result.ok ? { ok: true, revisionToken: issue(file, content, result.baseline).revisionToken, editorConflict: false } : result },
+      writeTextDocumentGuarded: async (file, content, token) => { const previous = take(file, token); assertCurrent(); attempt(); const result = mutationResult(await context.api.vault.write(file, content, previous.baseline)); return result.ok ? { ok: true, revisionToken: issue(file, content, result.baseline).revisionToken, editorConflict: false } : result },
+      renameTextDocumentGuarded: async (file, target, token) => { const previous = take(file, token); assertCurrent(); attempt(); const result = await context.api.vault.rename(file, target, previous.baseline); if (!result.ok) throw Object.assign(new Error(`Contact rename failed: ${result.reason}`), { code: 'RENAME_CONFLICT', outcome: committed ? 'unknown' : 'not-applied' }); mutationResult(result); return result.ok ? { ok: true, relPath: result.relPath, revisionToken: result.baseline.hash === previous.baseline.hash ? issue(result.relPath, previous.content, result.baseline).revisionToken : null, editorConflict: result.baseline.hash !== previous.baseline.hash } : result },
+      trashTextDocumentGuarded: async (file, token) => {
+        const previous = take(file, token); assertCurrent(); attempt()
+        const result = await context.api.vault.trash(file, previous.baseline)
+        if (!result.ok && !committed) throw refused('REVISION_CONFLICT', 'Contact changed; read its current revision before deleting')
+        return result.ok ? { ...result, editorConflict: false, recoverySaved: true } : result
+      }
     }
   }
-  return { owner, baselineFor: (document: TextDocumentRead | null) => document ? receipts.get(document.revisionToken)?.baseline ?? null : null }
+  return { owner, attempt, untouched: () => !attempted, baselineFor: (document: TextDocumentRead | null) => document ? receipts.get(document.revisionToken)?.baseline ?? null : null }
 }
 /** Trash receipts this backend issued; the host accepts only its own session's receipts, so any other token is refused before the call. */
 export interface ContactSession { trashTokens: Set<string> }
 export function handlers(context: PluginBackendOperationContext, session: ContactSession = { trashTokens: new Set() }) {
-  const { owner, baselineFor } = documentOwner(context)
+  const { owner, attempt, untouched, baselineFor } = documentOwner(context)
   const read = async (file: string, expected?: FileBaseline) => {
     owner.assertCurrent()
     const document = await owner.vault.readTextDocument(file)
     if (!document) throw refused('NOT_FOUND', 'Contact file does not exist')
     const observed = baselineFor(document)!
     if (expected && (expected.hash !== observed.hash || expected.size !== observed.size)) conflict()
-    return { document, contact: parseContactFile(file, document.content), baseline: observed }
+    let contact: ReturnType<typeof parseContactFile>
+    try { contact = parseContactFile(file, document.content) } catch (cause) { throw refused('INVALID_CONTACT', cause instanceof Error ? cause.message : 'The file is not a vCard') }
+    return { document, contact, baseline: observed }
   }
   const saved = (result: Awaited<ReturnType<typeof saveContact>>, fallback: ReturnType<typeof emptyContact>) => {
     if (!result) conflict()
     return { contact: result.document ? parseContactFile(result.relPath, result.document.content) : { ...fallback, relPath: result.relPath }, baseline: baselineFor(result.document), editorConflict: result.editorConflict }
   }
-  return {
+  const methods = {
     'contacts.list': async (raw: unknown) => {
       const input = parse('contacts.list', raw), root = rootFor(context.api)
       const observation = await context.api.index.observe({ extensions: ['.vcf'], ...(root ? { pathPrefix: root } : {}), fields: [] }, () => {})
@@ -155,6 +163,7 @@ export function handlers(context: PluginBackendOperationContext, session: Contac
     'contacts.restore': async (raw: unknown) => {
       const input = parse('contacts.restore', raw)
       if (!session.trashTokens.has(input.token)) throw refused('RESTORE_TOKEN_UNKNOWN', 'This trash receipt was not issued by the running Contacts backend')
+      attempt()
       const result = await context.api.vault.restore(input.token)
       if (!result.ok) throw refused('RESTORE_CONFLICT', result.message ?? 'Contact could not be restored')
       session.trashTokens.delete(input.token)
@@ -162,6 +171,16 @@ export function handlers(context: PluginBackendOperationContext, session: Contac
       return { ok: true as const, restoredPath: result.restoredPath }
     }
   }
+  // A failure before any vault mutation was attempted (a malformed card, cancellation, a refused read) left nothing
+  // applied; once one was attempted only an explicit refusal is not-applied and anything else stays uncertain.
+  return Object.fromEntries(Object.entries(methods).map(([name, run]) => [name, async (raw: unknown) => {
+    try { return await run(raw) } catch (cause) {
+      if (!untouched()) throw cause
+      const error: Error & { outcome?: string } = cause && typeof cause === 'object' ? cause as Error : new Error(String(cause))
+      if (error.outcome === undefined) error.outcome = 'not-applied'
+      throw error
+    }
+  }])) as typeof methods
 }
 export function register(api: PluginBackendApi): () => void {
   const workflow = createWorkflowAdapter(api)
