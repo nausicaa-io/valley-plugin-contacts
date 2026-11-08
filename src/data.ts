@@ -113,7 +113,7 @@ export function createContactProjection(owner: ValleyPluginApi, readEntries = ()
   let coverPaths: Record<string, string | null> = {}
   let coverInput: Contact[] | undefined
   let coverImagesKey = ''
-  let vault = owner.getState().vault?.path
+  let realm = owner.getState().realm?.path
   const equalItems = <T>(a: T[], b: T[]): boolean => a.length === b.length && a.every((value, index) => value === b[index])
   const pump = (): void => {
     while (reading < CONTACT_READS && queue.length) {
@@ -121,7 +121,7 @@ export function createContactProjection(owner: ValleyPluginApi, readEntries = ()
       if (files.get(path) !== record) continue
       reading++
       const epoch = generation
-      void owner.vault.readFile(path).then((raw) => {
+      void owner.realm.readFile(path).then((raw) => {
         if (epoch !== generation || files.get(path) !== record) return
         try {
           record.contact = parseContactFile(path, raw)
@@ -163,7 +163,7 @@ export function createContactProjection(owner: ValleyPluginApi, readEntries = ()
     settled: (): boolean => ![...files.values()].some((record) => record.pending),
     contacts: (settings: ContactsSettings): Contact[] => {
       const state = owner.getState()
-      if (vault !== state.vault?.path) { reset(); vault = state.vault?.path }
+      if (realm !== state.realm?.path) { reset(); realm = state.realm?.path }
       const prefix = settings.contactsRoot ? `${settings.contactsRoot}/` : ''
       const retained = new Set<string>()
       const next: Contact[] = []
@@ -377,19 +377,19 @@ type ContactEditorSave = ({ view: MountedPluginView } | { path: string; instance
 
 function documentOwner(owner: ValleyPluginApi, editor?: ContactEditorSave, validateBeforeEffect?: (paths: string[]) => Promise<void>): documents.ContactDocumentOwner {
   const index = getContactIndex(owner)
-  return { root: () => getSettings(owner).contactsRoot, assertCurrent: index.assertCurrent, vault: owner.vault, validateBeforeEffect,
+  return { root: () => getSettings(owner).contactsRoot, assertCurrent: index.assertCurrent, realm: owner.realm, validateBeforeEffect,
     ...(editor ? { saveEditor: async (path: string, content: string, before: TextDocumentRead) => {
       index.assertCurrent()
-      const disk = await owner.vault.readFileBaseline(path)
+      const disk = await owner.realm.readFileBaseline(path)
       index.assertCurrent()
       if (!disk?.baseline || disk.content !== before.content) return { ok: false as const, reason: 'stale' as const }
       await validateBeforeEffect?.([path])
       const written = 'view' in editor
-        ? await owner.vault.editors.save(editor.view, content, disk.baseline, editor.revision)
-        : await owner.vault.editors.saveDocument(path, editor.instanceId, content, disk.baseline, editor.revision)
+        ? await owner.realm.editors.save(editor.view, content, disk.baseline, editor.revision)
+        : await owner.realm.editors.saveDocument(path, editor.instanceId, content, disk.baseline, editor.revision)
       if (!written.ok) return { ok: false as const, reason: written.reason }
       editor.committed()
-      const fresh = await owner.vault.readTextDocument(path).catch(() => null)
+      const fresh = await owner.realm.readTextDocument(path).catch(() => null)
       index.assertCurrent()
       return { ok: true as const, revisionToken: fresh?.content === content ? fresh.revisionToken : null, editorConflict: false }
     } } : {}) }

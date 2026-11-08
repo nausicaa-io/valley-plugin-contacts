@@ -130,7 +130,7 @@
   "contacts.social.reorder": "拖动以重新排序",
   "contacts.social.searchPlatform": "搜索平台",
   "contacts.social.useCustom": "使用“{{p0}}”",
-  "manifest.description": "基于仓库中 vCard 文件的通讯录：带颜色的有序分组、支持封面的结构化联系人卡片、带类型的关系、日历中的生日，以及力导向关系图。",
+  "manifest.description": "基于 Realm 中 vCard 文件的通讯录：带颜色的有序分组、支持封面的结构化联系人卡片、带类型的关系、日历中的生日，以及力导向关系图。",
   "manifest.name": "联系人",
   "markdown.examples.card": "联系人卡片",
   "markdown.examples.details": "联系人详情",

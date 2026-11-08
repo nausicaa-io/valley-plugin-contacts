@@ -80,9 +80,9 @@
         "labelKey": "plugin.contacts.field.root",
         "type": "text",
         "default": "",
-        "description": "Vault-relative folder scanned for contact cards (one .vcf per person).",
+        "description": "Realm-relative folder scanned for contact cards (one .vcf per person).",
         "descriptionKey": "contacts.settings.rootDescription",
-        "validate": "vault-folder"
+        "validate": "realm-folder"
       },
       {
         "key": "socials",
@@ -1749,7 +1749,7 @@
         "metadata": {
           "command": {
             "id": "contacts.delete",
-            "description": "Soft-delete the exact reviewed vCard into the configured trash. A vault-trash token can be restored during this backend session.",
+            "description": "Soft-delete the exact reviewed vCard into the configured trash. A realm-trash token can be restored during this backend session.",
             "effect": "write",
             "inputSchema": {
               "type": "object",
@@ -1802,7 +1802,7 @@
                   "type": "string",
                   "enum": [
                     "system",
-                    "vault"
+                    "realm"
                   ]
                 },
                 "token": {
@@ -2206,7 +2206,7 @@
         "metadata": {
           "command": {
             "id": "contacts.restore",
-            "description": "Restore a vault-trash token owned by this active backend session, provided the original path remains free.",
+            "description": "Restore a realm-trash token owned by this active backend session, provided the original path remains free.",
             "effect": "write",
             "inputSchema": {
               "type": "object",
@@ -5140,7 +5140,7 @@
                 "type": "action",
                 "version": "1.0.0",
                 "displayName": "Soft-delete the exact reviewed vCard into the configured trash",
-                "description": "Soft-delete the exact reviewed vCard into the configured trash. A vault-trash token can be restored during this backend session.. Uses the owning plugin backend and its existing grants and revision checks.",
+                "description": "Soft-delete the exact reviewed vCard into the configured trash. A realm-trash token can be restored during this backend session.. Uses the owning plugin backend and its existing grants and revision checks.",
                 "effect": "write",
                 "idempotent": false,
                 "executionMode": "item",
@@ -5170,7 +5170,7 @@
                           "type": "string",
                           "enum": [
                             "system",
-                            "vault"
+                            "realm"
                           ]
                         },
                         "token": {
@@ -5267,7 +5267,7 @@
                       "type": "string",
                       "enum": [
                         "system",
-                        "vault"
+                        "realm"
                       ]
                     },
                     "token": {
@@ -5999,8 +5999,8 @@
                 "id": "contacts.restore",
                 "type": "action",
                 "version": "1.0.0",
-                "displayName": "Restore a vault-trash token owned by this active backend session, provided the original path remains free",
-                "description": "Restore a vault-trash token owned by this active backend session, provided the original path remains free.. Uses the owning plugin backend and its existing grants and revision checks.",
+                "displayName": "Restore a realm-trash token owned by this active backend session, provided the original path remains free",
+                "description": "Restore a realm-trash token owned by this active backend session, provided the original path remains free.. Uses the owning plugin backend and its existing grants and revision checks.",
                 "effect": "write",
                 "idempotent": false,
                 "executionMode": "item",
@@ -6161,7 +6161,7 @@
   ],
   "permissions": {
     "storage": {
-      "vault": true
+      "realm": true
     },
     "largeData": true
   }

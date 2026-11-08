@@ -64,7 +64,7 @@ export interface SocialLink {
 
 /** A contact read from one `.vcf` file (its first card). */
 export interface Contact {
-  /** Vault-relative path of the `.vcf` file. */
+  /** Realm-relative path of the `.vcf` file. */
   relPath: string
   /** File basename without extension — the stable identity / display fallback. */
   fileName: string
@@ -75,7 +75,7 @@ export interface Contact {
   lastName: string
   nickname: string
   birthdate: string
-  /** Optional vault image file name/path used as the contact cover/avatar. */
+  /** Optional realm image file name/path used as the contact cover/avatar. */
   cover: string
   /** Ordered virtual groups — first one drives the contact accent color. */
   groups: string[]
@@ -93,7 +93,7 @@ export interface Contact {
   uid: string
   /** Markdown notes kept in the card's `NOTE`. */
   note: string
-  /** Embedded `PHOTO` as a data URI, shown when there is no vault cover. */
+  /** Embedded `PHOTO` as a data URI, shown when there is no realm cover. */
   photo: string
 }
 

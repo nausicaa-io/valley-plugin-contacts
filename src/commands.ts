@@ -330,7 +330,7 @@ function resolveContact(contacts: Contact[], query: string): Contact | null {
   const exact = contacts.find((c) => c.relPath === q)
   if (exact) return exact
   const matches = contacts.filter((c) => [c.fileName, c.displayName, c.nickname, [c.firstName, c.lastName].filter(Boolean).join(' ')].some((name) => name.toLowerCase() === q.toLowerCase()))
-  if (matches.length > 1) throw new Error(`Multiple contacts match "${q}". Use the exact vault path.`)
+  if (matches.length > 1) throw new Error(`Multiple contacts match "${q}". Use the exact realm path.`)
   return matches[0] ?? null
 }
 
@@ -540,7 +540,7 @@ export function registerContactsCommands(api: ValleyPluginApi): () => void {
       formatCli: () => 'Opened the contact relationship graph.'
     }),
 
-    // Takes a name OR a vault path; `resolveContact` resolves an exact relPath.
+    // Takes a name OR a realm path; `resolveContact` resolves an exact relPath.
     register({
       id: 'open',
       label: 'Contacts: Open a contact', labelKey: 'auto.70b325ca96a8',
@@ -785,13 +785,13 @@ export function registerContactsCommands(api: ValleyPluginApi): () => void {
             if (restoreAttempted) throw new Error('The contact restore was already attempted.')
             restoreAttempted = true
             if (removed.token) {
-              // Move the trashed card back so the vault trash entry is consumed and the exact bytes return.
-              const untrashed = await api.vault.restoreTrashed(removed.token)
+              // Move the trashed card back so the realm trash entry is consumed and the exact bytes return.
+              const untrashed = await api.realm.restoreTrashed(removed.token)
               if (!untrashed.ok) throw new Error('The contact path is occupied or could not be restored.')
               if (untrashed.restoredPath !== undefined && untrashed.restoredPath !== contact.relPath) throw new Error(`The contact was restored to ${untrashed.restoredPath} instead of ${contact.relPath}.`)
               return
             }
-            const restored = await api.vault.createTextDocumentGuarded(contact.relPath, prior.content)
+            const restored = await api.realm.createTextDocumentGuarded(contact.relPath, prior.content)
             if (!restored.ok) throw new Error('The contact path is occupied or could not be restored.')
             if (restored.editorConflict) throw new Error('The contact was restored, but newer editor text remains.')
           } }

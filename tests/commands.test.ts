@@ -7,7 +7,7 @@ import { disposeStore, getStore } from '../src/store'
 import { registerContactsCommands } from '../src/commands'
 import { registerContactSurfaces } from '../src/surfaces'
 import type { Contact } from '../src/types'
-import { cardAt, cardVault, uidFor } from './cards'
+import { cardAt, cardRealm, uidFor } from './cards'
 
 function validatePublishedResults(mock: { api: import('@valley/plugin-sdk').ValleyPluginApi }): void {
   const original = mock.api.commands.register
@@ -26,7 +26,7 @@ function validatePublishedResults(mock: { api: import('@valley/plugin-sdk').Vall
 }
 
 function setup(extra: Record<string, Partial<Contact>> = {}): ReturnType<typeof createMockValleyApi> {
-  const { files, indexEntries } = cardVault({
+  const { files, indexEntries } = cardRealm({
     'Meadow/Orbit/Fox Woodland.vcf': { firstName: 'Fox', lastName: 'Woodland', groups: ['fungi'], phone: [{ value: '0000000000', type: 'Mobile' }], note: 'Woodland observation' },
     'Meadow/Orbit/Otter Riverbank.vcf': { firstName: 'Otter', lastName: 'Riverbank', groups: ['plants'], note: 'Woodland observation' },
     ...extra
@@ -48,7 +48,7 @@ function setup(extra: Record<string, Partial<Contact>> = {}): ReturnType<typeof 
 }
 
 function writes(mock: ReturnType<typeof createMockValleyApi>): Array<{ relPath: string; content: string }> {
-  return [mock.api.vault.writeTextDocumentGuarded, mock.api.vault.createTextDocumentGuarded, mock.api.vault.writeFileGuarded].flatMap(write => {
+  return [mock.api.realm.writeTextDocumentGuarded, mock.api.realm.createTextDocumentGuarded, mock.api.realm.writeFileGuarded].flatMap(write => {
     const calls = vi.mocked(write).mock
     return calls.calls.map(([relPath, content], index) => ({ relPath, content, order: calls.invocationCallOrder[index] }))
   }).sort((a, b) => a.order - b.order)
@@ -63,7 +63,7 @@ function writesTo(mock: ReturnType<typeof createMockValleyApi>, relPath: string)
 }
 
 function renames(mock: ReturnType<typeof createMockValleyApi>): { relPath: string; newRelPath: string }[] {
-  return vi.mocked(mock.api.vault.renameTextDocumentGuarded).mock.calls.map(([relPath, newRelPath]) => ({ relPath, newRelPath }))
+  return vi.mocked(mock.api.realm.renameTextDocumentGuarded).mock.calls.map(([relPath, newRelPath]) => ({ relPath, newRelPath }))
 }
 
 afterEach(() => {
@@ -131,11 +131,11 @@ describe('contacts:list / get', () => {
   })
 
   it('truncates a long note and reports the total length', async () => {
-    const vault = cardVault({ 'Meadow/Orbit/Long Observation.vcf': { firstName: 'Long', lastName: 'Observation', note: 'x'.repeat(50) } })
+    const realm = cardRealm({ 'Meadow/Orbit/Long Observation.vcf': { firstName: 'Long', lastName: 'Observation', note: 'x'.repeat(50) } })
     const mock = createMockValleyApi({
       manifest: { id: 'contacts' },
       settings: { contactsRoot: 'Meadow/Orbit', groups: [] },
-      ...vault
+      ...realm
     })
     initRuntime(mock.api)
     registerContactsCommands(mock.api)
@@ -152,7 +152,7 @@ describe('contacts:list / get', () => {
 })
 
 describe('contacts:open', () => {
-  it('opens a contact by vault path as well as by name', async () => {
+  it('opens a contact by realm path as well as by name', async () => {
     const mock = setup()
     const byPath = await mock.api.commands.execute('contacts:open', {
       path: 'Meadow/Orbit/Fox Woodland.vcf'
@@ -195,58 +195,58 @@ describe('contacts:create', () => {
 
     expect(mock.busUndo).toHaveLength(1)
     await mock.busUndo[0].undo()
-    expect(mock.api.vault.trashTextDocumentGuarded).toHaveBeenCalledWith('Meadow/Orbit/Badger Burrow.vcf', expect.any(String))
-    expect(await mock.api.vault.readFile('Meadow/Orbit/Badger Burrow.vcf')).toBe('')
+    expect(mock.api.realm.trashTextDocumentGuarded).toHaveBeenCalledWith('Meadow/Orbit/Badger Burrow.vcf', expect.any(String))
+    expect(await mock.api.realm.readFile('Meadow/Orbit/Badger Burrow.vcf')).toBe('')
   })
 
   it('keeps the creation receipt when newer typing arrives before the create result returns', async () => {
     const mock = setup()
-    const create = vi.mocked(mock.api.vault.createTextDocumentGuarded).getMockImplementation()!
-    vi.mocked(mock.api.vault.createTextDocumentGuarded).mockImplementationOnce(async (...args) => {
+    const create = vi.mocked(mock.api.realm.createTextDocumentGuarded).getMockImplementation()!
+    vi.mocked(mock.api.realm.createTextDocumentGuarded).mockImplementationOnce(async (...args) => {
       const result = await create(...args)
-      await mock.api.vault.writeFile(args[0], `${args[1]}Newer editor text`)
+      await mock.api.realm.writeFile(args[0], `${args[1]}Newer editor text`)
       return result
     })
     expect((await mock.api.commands.execute('contacts:create', { firstName: 'Badger' })).ok).toBe(true)
-    const read = vi.spyOn(mock.api.vault, 'readTextDocument')
+    const read = vi.spyOn(mock.api.realm, 'readTextDocument')
     await expect(mock.busUndo[0].undo()).rejects.toThrow()
     expect(read).not.toHaveBeenCalled()
-    expect(await mock.api.vault.readFile('Meadow/Orbit/Badger.vcf')).toContain('Newer editor text')
+    expect(await mock.api.realm.readFile('Meadow/Orbit/Badger.vcf')).toContain('Newer editor text')
   })
 
   it('never retries created-file undo after the host rejects a dirty editor', async () => {
     const mock = setup()
     await mock.api.commands.execute('contacts:create', { firstName: 'Badger' })
-    const original = await mock.api.vault.readFile('Meadow/Orbit/Badger.vcf')
-    vi.mocked(mock.api.vault.trashTextDocumentGuarded).mockResolvedValueOnce({ ok: false, reason: 'stale' })
+    const original = await mock.api.realm.readFile('Meadow/Orbit/Badger.vcf')
+    vi.mocked(mock.api.realm.trashTextDocumentGuarded).mockResolvedValueOnce({ ok: false, reason: 'stale' })
     await expect(mock.busUndo[0].undo()).rejects.toThrow()
     await expect(mock.busUndo[0].undo()).rejects.toThrow()
-    expect(mock.api.vault.trashTextDocumentGuarded).toHaveBeenCalledOnce()
-    expect(await mock.api.vault.readFile('Meadow/Orbit/Badger.vcf')).toBe(original)
+    expect(mock.api.realm.trashTextDocumentGuarded).toHaveBeenCalledOnce()
+    expect(await mock.api.realm.readFile('Meadow/Orbit/Badger.vcf')).toBe(original)
   })
 
   it.each([true, false])('reports committed deletion with newer text and recoverySaved=%s without replaying', async recoverySaved => {
     const mock = setup()
     await mock.api.commands.execute('contacts:create', { firstName: 'Badger' })
-    const trash = vi.mocked(mock.api.vault.trashTextDocumentGuarded).getMockImplementation()!
-    vi.mocked(mock.api.vault.trashTextDocumentGuarded).mockImplementationOnce(async (...args) => {
+    const trash = vi.mocked(mock.api.realm.trashTextDocumentGuarded).getMockImplementation()!
+    vi.mocked(mock.api.realm.trashTextDocumentGuarded).mockImplementationOnce(async (...args) => {
       const result = await trash(...args)
       return result.ok ? { ...result, editorConflict: true, recoverySaved } : result
     })
     await expect(mock.busUndo[0].undo()).rejects.toThrow('file was deleted')
     await expect(mock.busUndo[0].undo()).rejects.toThrow()
-    expect(mock.api.vault.trashTextDocumentGuarded).toHaveBeenCalledOnce()
-    expect(await mock.api.vault.readFile('Meadow/Orbit/Badger.vcf')).toBe('')
+    expect(mock.api.realm.trashTextDocumentGuarded).toHaveBeenCalledOnce()
+    expect(await mock.api.realm.readFile('Meadow/Orbit/Badger.vcf')).toBe('')
   })
 
   it('does not replay an uncertain trash result', async () => {
     const mock = setup()
     await mock.api.commands.execute('contacts:create', { firstName: 'Badger' })
-    const trash = vi.mocked(mock.api.vault.trashTextDocumentGuarded).getMockImplementation()!
-    vi.mocked(mock.api.vault.trashTextDocumentGuarded).mockImplementationOnce(async (...args) => { await trash(...args); throw new Error('Acknowledgement lost') })
+    const trash = vi.mocked(mock.api.realm.trashTextDocumentGuarded).getMockImplementation()!
+    vi.mocked(mock.api.realm.trashTextDocumentGuarded).mockImplementationOnce(async (...args) => { await trash(...args); throw new Error('Acknowledgement lost') })
     await expect(mock.busUndo[0].undo()).rejects.toThrow('Acknowledgement lost')
     await expect(mock.busUndo[0].undo()).rejects.toThrow()
-    expect(mock.api.vault.trashTextDocumentGuarded).toHaveBeenCalledOnce()
+    expect(mock.api.realm.trashTextDocumentGuarded).toHaveBeenCalledOnce()
   })
 })
 
@@ -263,7 +263,7 @@ describe('contacts:update', () => {
   it('reverts to the exact prior file content', async () => {
     const mock = setup()
     const relPath = 'Meadow/Orbit/Fox Woodland.vcf'
-    const before = await mock.api.vault.readFile(relPath)
+    const before = await mock.api.realm.readFile(relPath)
     await mock.api.commands.execute('contacts:update', { name: 'Fox Woodland', profession: 'Mycology' })
 
     await mock.busUndo[0].undo()
@@ -298,7 +298,7 @@ describe('contact file names', () => {
     const mock = createMockValleyApi({
       manifest: { id: 'contacts' },
       settings: { contactsRoot: 'Meadow/Orbit', groups: [] },
-      ...cardVault({ [relPath]: { firstName: 'Fox', lastName: 'Woodland' } })
+      ...cardRealm({ [relPath]: { firstName: 'Fox', lastName: 'Woodland' } })
     })
     initRuntime(mock.api)
     registerContactsCommands(mock.api)
@@ -327,13 +327,13 @@ describe('contact file names', () => {
       { relPath: 'Meadow/Orbit/Fox Woodland.vcf', newRelPath: 'Meadow/Orbit/Otter Riverbank 2.vcf' }
     ])
     expect((result as { value: Contact }).value.relPath).toBe('Meadow/Orbit/Otter Riverbank 2.vcf')
-    expect(await mock.api.vault.readFile('Meadow/Orbit/Otter Riverbank.vcf')).toContain('N:Riverbank;Otter;;;')
+    expect(await mock.api.realm.readFile('Meadow/Orbit/Otter Riverbank.vcf')).toContain('N:Riverbank;Otter;;;')
   })
 
   it('reverts a renaming update back to the old name and bytes', async () => {
     const mock = setup()
     const relPath = 'Meadow/Orbit/Fox Woodland.vcf'
-    const before = await mock.api.vault.readFile(relPath)
+    const before = await mock.api.realm.readFile(relPath)
     await mock.api.commands.execute('contacts:update', { name: 'Fox Woodland', lastName: 'Mäander' })
 
     await mock.busUndo[0].undo()
@@ -341,18 +341,18 @@ describe('contact file names', () => {
       relPath: 'Meadow/Orbit/Fox Mäander.vcf',
       newRelPath: relPath
     })
-    expect(await mock.api.vault.readFile(relPath)).toBe(before)
-    expect(await mock.api.vault.readFile('Meadow/Orbit/Fox Mäander.vcf')).toBe('')
+    expect(await mock.api.realm.readFile(relPath)).toBe(before)
+    expect(await mock.api.realm.readFile('Meadow/Orbit/Fox Mäander.vcf')).toBe('')
   })
 
   it('creates a namesake beside the original instead of overwriting it', async () => {
     const mock = setup()
-    const original = await mock.api.vault.readFile('Meadow/Orbit/Fox Woodland.vcf')
+    const original = await mock.api.realm.readFile('Meadow/Orbit/Fox Woodland.vcf')
     const result = await mock.api.commands.execute('contacts:create', { firstName: 'Fox', lastName: 'Woodland' })
     expect(result.ok).toBe(true)
     expect((result as { value: Contact }).value.relPath).toBe('Meadow/Orbit/Fox Woodland 2.vcf')
     expect(lastWrite(mock).relPath).toBe('Meadow/Orbit/Fox Woodland 2.vcf')
-    expect(await mock.api.vault.readFile('Meadow/Orbit/Fox Woodland.vcf')).toBe(original)
+    expect(await mock.api.realm.readFile('Meadow/Orbit/Fox Woodland.vcf')).toBe(original)
   })
 })
 
@@ -360,35 +360,35 @@ describe('contacts:delete', () => {
   it('soft-deletes and reverts by restoring the trashed card, consuming its trash entry', async () => {
     const mock = setup()
     const relPath = 'Meadow/Orbit/Otter Riverbank.vcf'
-    const before = await mock.api.vault.readFile(relPath)
+    const before = await mock.api.realm.readFile(relPath)
 
     const result = await mock.api.commands.execute('contacts:delete', { name: 'Otter Riverbank' })
     expect(result.ok).toBe(true)
-    expect(mock.api.vault.trashTextDocumentGuarded).toHaveBeenCalledWith(relPath, expect.any(String))
-    const trashed = await vi.mocked(mock.api.vault.trashTextDocumentGuarded).mock.results[0].value
+    expect(mock.api.realm.trashTextDocumentGuarded).toHaveBeenCalledWith(relPath, expect.any(String))
+    const trashed = await vi.mocked(mock.api.realm.trashTextDocumentGuarded).mock.results[0].value
     const token = trashed.ok ? trashed.token! : ''
     expect(token).toBeTruthy()
 
     expect((await mock.busUndo[0].undo()).ok).toBe(true)
-    expect(await mock.api.vault.readFile(relPath)).toBe(before)
-    expect(mock.api.vault.restoreTrashed).toHaveBeenCalledWith(token)
-    expect(mock.api.vault.createTextDocumentGuarded).not.toHaveBeenCalled()
+    expect(await mock.api.realm.readFile(relPath)).toBe(before)
+    expect(mock.api.realm.restoreTrashed).toHaveBeenCalledWith(token)
+    expect(mock.api.realm.createTextDocumentGuarded).not.toHaveBeenCalled()
     // The trash entry the delete created is gone: it cannot be restored a second time.
-    expect(await mock.api.vault.restoreTrashed(token)).toMatchObject({ ok: false, message: 'Trash entry not found' })
+    expect(await mock.api.realm.restoreTrashed(token)).toMatchObject({ ok: false, message: 'Trash entry not found' })
   })
 
-  it('recreates the card when the delete went to the system trash without a vault token', async () => {
+  it('recreates the card when the delete went to the system trash without a realm token', async () => {
     const mock = setup()
     const relPath = 'Meadow/Orbit/Otter Riverbank.vcf'
-    const before = await mock.api.vault.readFile(relPath)
-    const trash = vi.mocked(mock.api.vault.trashTextDocumentGuarded).getMockImplementation()!
-    vi.mocked(mock.api.vault.trashTextDocumentGuarded).mockImplementationOnce(async (...args) => {
+    const before = await mock.api.realm.readFile(relPath)
+    const trash = vi.mocked(mock.api.realm.trashTextDocumentGuarded).getMockImplementation()!
+    vi.mocked(mock.api.realm.trashTextDocumentGuarded).mockImplementationOnce(async (...args) => {
       const result = await trash(...args)
       return result.ok ? { ...result, destination: 'system' as const, token: undefined } : result
     })
     expect((await mock.api.commands.execute('contacts:delete', { name: 'Otter Riverbank' })).ok).toBe(true)
     expect((await mock.busUndo[0].undo()).ok).toBe(true)
-    expect(mock.api.vault.restoreTrashed).not.toHaveBeenCalled()
+    expect(mock.api.realm.restoreTrashed).not.toHaveBeenCalled()
     expect(writesTo(mock, relPath).at(-1)).toBe(before)
   })
 
@@ -396,36 +396,36 @@ describe('contacts:delete', () => {
     const mock = setup()
     const relPath = 'Meadow/Orbit/Otter Riverbank.vcf'
     expect((await mock.api.commands.execute('contacts:delete', { name: 'Otter Riverbank' })).ok).toBe(true)
-    vi.mocked(mock.api.vault.restoreTrashed).mockResolvedValueOnce({ ok: false, message: 'Trash entry not found' })
+    vi.mocked(mock.api.realm.restoreTrashed).mockResolvedValueOnce({ ok: false, message: 'Trash entry not found' })
     await expect(mock.busUndo[0].undo()).rejects.toThrow('could not be restored')
-    expect(await mock.api.vault.stat(relPath)).toBeNull()
-    expect(mock.api.vault.createTextDocumentGuarded).not.toHaveBeenCalled()
+    expect(await mock.api.realm.stat(relPath)).toBeNull()
+    expect(mock.api.realm.createTextDocumentGuarded).not.toHaveBeenCalled()
   })
 
   it('keeps a changed note when deletion loses its captured revision', async () => {
     const mock = setup()
     const path = 'Meadow/Orbit/Otter Riverbank.vcf'
-    const trash = vi.mocked(mock.api.vault.trashTextDocumentGuarded).getMockImplementation()!
-    vi.mocked(mock.api.vault.trashTextDocumentGuarded).mockImplementationOnce(async (...args) => {
-      await mock.api.vault.writeFile(path, 'Newer text')
+    const trash = vi.mocked(mock.api.realm.trashTextDocumentGuarded).getMockImplementation()!
+    vi.mocked(mock.api.realm.trashTextDocumentGuarded).mockImplementationOnce(async (...args) => {
+      await mock.api.realm.writeFile(path, 'Newer text')
       return trash(...args)
     })
     expect((await mock.api.commands.execute('contacts:delete', { name: path })).ok).toBe(false)
-    expect(await mock.api.vault.readFile(path)).toBe('Newer text')
+    expect(await mock.api.realm.readFile(path)).toBe('Newer text')
     expect(mock.busUndo).toHaveLength(0)
   })
 
   it('fails closed before deletion when the current document cannot be read', async () => {
     const mock = setup()
-    vi.spyOn(mock.api.vault, 'readTextDocument').mockRejectedValue(new Error('Read failed'))
+    vi.spyOn(mock.api.realm, 'readTextDocument').mockRejectedValue(new Error('Read failed'))
     expect((await mock.api.commands.execute('contacts:delete', { name: 'Otter Riverbank' })).ok).toBe(false)
-    expect(mock.api.vault.trashTextDocumentGuarded).not.toHaveBeenCalled()
+    expect(mock.api.realm.trashTextDocumentGuarded).not.toHaveBeenCalled()
   })
 
   it('reports committed deletion and withholds recreation when newer text needs recovery', async () => {
     const mock = setup()
-    const trash = vi.mocked(mock.api.vault.trashTextDocumentGuarded).getMockImplementation()!
-    vi.mocked(mock.api.vault.trashTextDocumentGuarded).mockImplementationOnce(async (...args) => {
+    const trash = vi.mocked(mock.api.realm.trashTextDocumentGuarded).getMockImplementation()!
+    vi.mocked(mock.api.realm.trashTextDocumentGuarded).mockImplementationOnce(async (...args) => {
       const result = await trash(...args)
       return result.ok ? { ...result, editorConflict: true, recoverySaved: false } : result
     })
@@ -527,11 +527,11 @@ describe('Contacts document revisions', () => {
 
   it('edits the live card and preserves unsaved editor text and unknown properties', async () => {
     const mock = setup()
-    const original = await mock.api.vault.readFile(path)
+    const original = await mock.api.realm.readFile(path)
     const draft = original.replace('NOTE:Woodland observation', 'NOTE:Unsaved ä ö ü notes\r\nX-CUSTOM;X-PARAM="a;b":retained')
-    await mock.api.vault.writeFile(path, draft)
+    await mock.api.realm.writeFile(path, draft)
     await getStore(mock.api).ready()
-    const readDisk = vi.spyOn(mock.api.vault, 'readFile').mockRejectedValue(new Error('Edits must read the live document'))
+    const readDisk = vi.spyOn(mock.api.realm, 'readFile').mockRejectedValue(new Error('Edits must read the live document'))
     const result = await mock.api.commands.execute('contacts:add-phone', { name: path, value: '01234' })
     expect(result.ok, JSON.stringify(result)).toBe(true)
     expect(lastWrite(mock).content).toContain('X-CUSTOM;X-PARAM="a;b":retained')
@@ -544,37 +544,37 @@ describe('Contacts document revisions', () => {
 
   it('rejects unreadable and malformed documents before any mutation', async () => {
     const mock = setup()
-    vi.spyOn(mock.api.vault, 'readTextDocument').mockRejectedValueOnce(new Error('Read failed'))
+    vi.spyOn(mock.api.realm, 'readTextDocument').mockRejectedValueOnce(new Error('Read failed'))
     expect((await mock.api.commands.execute('contacts:add-phone', { name: path, value: '01234' })).ok).toBe(false)
-    await mock.api.vault.writeFile(path, 'BEGIN:VCARD\r\nFN:Unterminated\r\n')
+    await mock.api.realm.writeFile(path, 'BEGIN:VCARD\r\nFN:Unterminated\r\n')
     expect((await mock.api.commands.execute('contacts:add-phone', { name: path, value: '01234' })).ok).toBe(false)
-    await mock.api.vault.writeFile(path, 'Plain text, not a card')
+    await mock.api.realm.writeFile(path, 'Plain text, not a card')
     expect((await mock.api.commands.execute('contacts:edit-fields', { path, values: { profession: 'Botany' } })).ok).toBe(false)
     expect(writes(mock)).toEqual([])
   })
 
   it('rejects a changed document between capture and save without renaming', async () => {
     const mock = setup()
-    const write = vi.mocked(mock.api.vault.writeTextDocumentGuarded).getMockImplementation()!
-    vi.mocked(mock.api.vault.writeTextDocumentGuarded).mockImplementationOnce(async (...args) => {
-      await mock.api.vault.writeFile(path, 'Newer draft')
+    const write = vi.mocked(mock.api.realm.writeTextDocumentGuarded).getMockImplementation()!
+    vi.mocked(mock.api.realm.writeTextDocumentGuarded).mockImplementationOnce(async (...args) => {
+      await mock.api.realm.writeFile(path, 'Newer draft')
       return write(...args)
     })
     expect((await mock.api.commands.execute('contacts:update', { name: path, lastName: 'Mäander' })).ok).toBe(false)
-    expect(await mock.api.vault.readFile(path)).toBe('Newer draft')
+    expect(await mock.api.realm.readFile(path)).toBe('Newer draft')
     expect(renames(mock)).toEqual([])
   })
 
   it('retains the exact undo token and rejects an edit/revert ABA without a new read', async () => {
     const mock = setup()
     await mock.api.commands.execute('contacts:update', { name: path, profession: 'Botany' })
-    const content = await mock.api.vault.readFile(path)
-    await mock.api.vault.writeFile(path, `${content}newer`)
-    await mock.api.vault.writeFile(path, content)
-    const read = vi.spyOn(mock.api.vault, 'readTextDocument')
+    const content = await mock.api.realm.readFile(path)
+    await mock.api.realm.writeFile(path, `${content}newer`)
+    await mock.api.realm.writeFile(path, content)
+    const read = vi.spyOn(mock.api.realm, 'readTextDocument')
     await expect(mock.busUndo[0].undo()).rejects.toThrow()
     expect(read).not.toHaveBeenCalled()
-    expect(await mock.api.vault.readFile(path)).toBe(content)
+    expect(await mock.api.realm.readFile(path)).toBe(content)
   })
 
   it('keeps a completed rename but refuses undo when the moved card changed afterwards', async () => {
@@ -582,63 +582,63 @@ describe('Contacts document revisions', () => {
     const moved = 'Meadow/Orbit/Fox Mäander.vcf'
     const result = await mock.api.commands.execute('contacts:update', { name: path, lastName: 'Mäander' })
     expect(result.ok).toBe(true)
-    await mock.api.vault.writeFile(moved, 'Newer moved draft')
+    await mock.api.realm.writeFile(moved, 'Newer moved draft')
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     await expect(mock.busUndo[0].undo()).rejects.toThrow()
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('Could not rename'))
     warn.mockRestore()
     expect(renames(mock)).toHaveLength(2)
-    expect(await mock.api.vault.readFile(moved)).toBe('Newer moved draft')
+    expect(await mock.api.realm.readFile(moved)).toBe('Newer moved draft')
   })
 
   it('does not fail a committed save or fabricate undo when the rename reports newer editor text', async () => {
     const mock = setup()
-    const rename = vi.mocked(mock.api.vault.renameTextDocumentGuarded).getMockImplementation()!
-    vi.mocked(mock.api.vault.renameTextDocumentGuarded).mockImplementationOnce(async (...args) => {
+    const rename = vi.mocked(mock.api.realm.renameTextDocumentGuarded).getMockImplementation()!
+    vi.mocked(mock.api.realm.renameTextDocumentGuarded).mockImplementationOnce(async (...args) => {
       const renamed = await rename(...args)
       return renamed.ok ? { ...renamed, revisionToken: null, editorConflict: true } : renamed
     })
     expect((await mock.api.commands.execute('contacts:update', { name: path, lastName: 'Mäander' })).ok).toBe(true)
     await expect(mock.busUndo[0].undo()).rejects.toThrow()
-    expect(await mock.api.vault.readFile('Meadow/Orbit/Fox Mäander.vcf')).toContain('N:Mäander;Fox;;;')
+    expect(await mock.api.realm.readFile('Meadow/Orbit/Fox Mäander.vcf')).toContain('N:Mäander;Fox;;;')
   })
 
   it('keeps guarded undo on the original path when renaming fails', async () => {
     const mock = setup()
-    const original = await mock.api.vault.readFile(path)
-    vi.mocked(mock.api.vault.renameTextDocumentGuarded).mockResolvedValue({ ok: false, reason: 'error' })
+    const original = await mock.api.realm.readFile(path)
+    vi.mocked(mock.api.realm.renameTextDocumentGuarded).mockResolvedValue({ ok: false, reason: 'error' })
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       const result = await mock.api.commands.execute('contacts:update', { name: path, lastName: 'Mäander' })
       expect(result).toMatchObject({ ok: true, value: { relPath: path } })
       expect((await mock.busUndo[0].undo()).ok).toBe(true)
-      expect(await mock.api.vault.readFile(path)).toBe(original)
+      expect(await mock.api.realm.readFile(path)).toBe(original)
     } finally { warn.mockRestore() }
   })
 
   it('does not overwrite a new file when restoring a deleted contact', async () => {
     const mock = setup()
     await mock.api.commands.execute('contacts:delete', { name: path })
-    await mock.api.vault.writeFile(path, 'Replacement')
+    await mock.api.realm.writeFile(path, 'Replacement')
     await expect(mock.busUndo[0].undo()).rejects.toThrow()
-    expect(await mock.api.vault.readFile(path)).toBe('Replacement')
+    expect(await mock.api.realm.readFile(path)).toBe('Replacement')
   })
 })
 
 it('preserves typing during a committed property write and does not rename or offer undo', async () => {
   const mock = setup()
   const path = 'Meadow/Orbit/Fox Woodland.vcf'
-  const write = vi.mocked(mock.api.vault.writeTextDocumentGuarded).getMockImplementation()!
-  vi.mocked(mock.api.vault.writeTextDocumentGuarded).mockImplementationOnce(async (...args) => {
+  const write = vi.mocked(mock.api.realm.writeTextDocumentGuarded).getMockImplementation()!
+  vi.mocked(mock.api.realm.writeTextDocumentGuarded).mockImplementationOnce(async (...args) => {
     const result = await write(...args)
     if (!result.ok) return result
-    await mock.api.vault.writeFile(path, `${args[1]}Newer typing\n`)
+    await mock.api.realm.writeFile(path, `${args[1]}Newer typing\n`)
     return { ok: true, revisionToken: null, editorConflict: true }
   })
   expect((await mock.api.commands.execute('contacts:update', { name: path, lastName: 'Mäander' })).ok).toBe(true)
   expect(renames(mock)).toEqual([])
   await expect(mock.busUndo[0].undo()).rejects.toThrow()
-  expect(await mock.api.vault.readFile(path)).toContain('Newer typing')
+  expect(await mock.api.realm.readFile(path)).toContain('Newer typing')
 })
 
 it('leaves the renamed card untouched when undo cannot rename it back, without replaying', async () => {
@@ -646,14 +646,14 @@ it('leaves the renamed card untouched when undo cannot rename it back, without r
   const path = 'Meadow/Orbit/Fox Woodland.vcf'
   const moved = 'Meadow/Orbit/Fox Mäander.vcf'
   expect((await mock.api.commands.execute('contacts:update', { name: path, lastName: 'Mäander' })).ok).toBe(true)
-  const renamed = await mock.api.vault.readFile(moved)
-  vi.mocked(mock.api.vault.renameTextDocumentGuarded).mockResolvedValue({ ok: false, reason: 'error' })
+  const renamed = await mock.api.realm.readFile(moved)
+  vi.mocked(mock.api.realm.renameTextDocumentGuarded).mockResolvedValue({ ok: false, reason: 'error' })
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
   try {
-    const count = vi.mocked(mock.api.vault.writeTextDocumentGuarded).mock.calls.length
+    const count = vi.mocked(mock.api.realm.writeTextDocumentGuarded).mock.calls.length
     await expect(mock.busUndo[0].undo()).rejects.toThrow()
-    expect(await mock.api.vault.readFile(moved)).toBe(renamed)
+    expect(await mock.api.realm.readFile(moved)).toBe(renamed)
     await expect(mock.busUndo[0].undo()).rejects.toThrow()
-    expect(mock.api.vault.writeTextDocumentGuarded).toHaveBeenCalledTimes(count)
+    expect(mock.api.realm.writeTextDocumentGuarded).toHaveBeenCalledTimes(count)
   } finally { warn.mockRestore() }
 })

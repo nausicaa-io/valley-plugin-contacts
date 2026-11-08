@@ -120,13 +120,13 @@ function createStore(api: ValleyPluginApi, onDispose: () => void): ContactsStore
   let settingsTimer: number | null = null
   let disposed = false
   let disposal: Promise<void> | undefined
-  let vault = api.getState().vault?.path
+  let realm = api.getState().realm?.path
   const settingsKey = (): string => {
     const settings = api.settings.get()
     return JSON.stringify([settings.contactsRoot, settings.socials])
   }
   let lastSettingsKey = settingsKey()
-  /** A rename the vault index has not applied yet (see `applyPendingRename`). */
+  /** A rename the realm index has not applied yet (see `applyPendingRename`). */
   let pendingRename: { from: string; to: string; input?: Contact[]; output?: Contact[] } | null = null
   /**
    * Serve a just-renamed contact under its new path while the index still lists
@@ -207,8 +207,8 @@ function createStore(api: ValleyPluginApi, onDispose: () => void): ContactsStore
 
   const reload = (force = false): void => {
     if (disposed) return
-    if (vault !== api.getState().vault?.path) {
-      vault = api.getState().vault?.path
+    if (realm !== api.getState().realm?.path) {
+      realm = api.getState().realm?.path
       pendingPath = null
       pendingRename = null
       if (pendingTimer !== null) window.clearTimeout(pendingTimer)
@@ -230,7 +230,7 @@ function createStore(api: ValleyPluginApi, onDispose: () => void): ContactsStore
     const coverPaths = projection.covers(contacts)
     // Drop selection if the contact disappeared (deleted/renamed). During the
     // first reloads, keep the saved selection until the scoped snapshot is
-    // complete, including an authoritatively empty vault.
+    // complete, including an authoritatively empty realm.
     const indexReady = index.getSnapshot().status === 'ready' && projection.settled()
     const present = Boolean(snap.selectedPath && contacts.some((c) => c.relPath === snap.selectedPath))
     if (present && pendingPath === snap.selectedPath) pendingPath = null
@@ -274,7 +274,7 @@ function createStore(api: ValleyPluginApi, onDispose: () => void): ContactsStore
     if (selectionChanged && indexReady) persistLastOpen()
   }
 
-  const offState = api.subscribeState(['groups', 'templateFolder', 'vault'], ({ revision }) => {
+  const offState = api.subscribeState(['groups', 'templateFolder', 'realm'], ({ revision }) => {
     if (revision > 0) reload()
   })
   const offIndex = index.subscribe(() => reload())
@@ -289,7 +289,7 @@ function createStore(api: ValleyPluginApi, onDispose: () => void): ContactsStore
   const offSettings = api.settings.subscribe(onSettingsChanged)
   /**
    * Follow a contact note that moved — our own rename, or one from the file tree.
-   * `reload` keeps serving the entry under its new path until the vault index
+   * `reload` keeps serving the entry under its new path until the realm index
    * catches up, so neither the list nor the open contact flickers.
    */
   const offRenamed = api.files.onRenamed(({ oldPath, newPath }) => {

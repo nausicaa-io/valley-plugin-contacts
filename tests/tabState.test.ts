@@ -5,7 +5,7 @@ import { getStore, disposeStore } from '../src/store'
 import { createContactProjection, getSettings } from '../src/data'
 import { initLocalization } from '../src/localization'
 import type { Contact } from '../src/types'
-import { cardAt, cardVault, fileEntry } from './cards'
+import { cardAt, cardRealm, fileEntry } from './cards'
 
 const FOX = { firstName: 'Fox', lastName: 'Woodland', groups: ['fungi'], note: 'Note' }
 const OTTER = { firstName: 'Otter', lastName: 'Riverbank', groups: ['plants'], note: 'Note' }
@@ -14,7 +14,7 @@ function setup(extraSettings: Record<string, unknown> = {}): ReturnType<typeof c
   return createMockValleyApi({
     manifest: { id: 'contacts' },
     settings: { contactsRoot: 'Meadow/Orbit', groups: [], ...extraSettings },
-    ...cardVault({ 'Meadow/Orbit/Fox Woodland.vcf': FOX, 'Meadow/Orbit/Otter Riverbank.vcf': OTTER })
+    ...cardRealm({ 'Meadow/Orbit/Fox Woodland.vcf': FOX, 'Meadow/Orbit/Otter Riverbank.vcf': OTTER })
   })
 }
 
@@ -23,7 +23,7 @@ async function rewrite(mock: ReturnType<typeof createMockValleyApi>, cards: Reco
   const changed = new Map<string, string>()
   for (const [relPath, fields] of Object.entries(cards)) {
     const content = cardAt(relPath, fields)
-    await mock.api.vault.writeFile(relPath, content)
+    await mock.api.realm.writeFile(relPath, content)
     changed.set(relPath, content)
   }
   const entries = mock.api.getState().indexEntries.map((entry) => changed.has(entry.relPath) ? fileEntry(entry.relPath, changed.get(entry.relPath)!, mtimeMs) : entry)
@@ -233,9 +233,9 @@ describe('store follows a renamed contact card', () => {
 
 it('reads only the changed card while retaining unrelated projections and shared consumers', async () => {
   const cards = Object.fromEntries(Array.from({ length: 500 }, (_, index) => [`Meadow/Orbit/Contact ${index}.vcf`, { firstName: `Contact ${index}`, groups: ['plants'], email: [{ value: `contact-${index}@example.com` }] }]))
-  const mock = createMockValleyApi({ manifest: { id: 'contacts' }, ...cardVault(cards) })
+  const mock = createMockValleyApi({ manifest: { id: 'contacts' }, ...cardRealm(cards) })
   initRuntime(mock.api)
-  const read = vi.spyOn(mock.api.vault, 'readFile')
+  const read = vi.spyOn(mock.api.realm, 'readFile')
   const store = getStore(mock.api)
   await store.ready()
   expect(getStore(mock.api)).toBe(store)
@@ -268,7 +268,7 @@ it('updates canonical groups and locale without rereading contacts or dropping f
   mock.api.ui.onLanguageChanged = (listener) => { languageChanged = listener; return () => {} }
   initRuntime(mock.api)
   initLocalization(mock.api)
-  const read = vi.spyOn(mock.api.vault, 'readFile')
+  const read = vi.spyOn(mock.api.realm, 'readFile')
   const store = getStore(mock.api)
   await store.ready()
   const before = store.getSnapshot()
@@ -293,14 +293,14 @@ it('updates canonical groups and locale without rereading contacts or dropping f
 
 it('preserves the first cover filename match when image order, names or membership change', async () => {
   const relPath = 'Meadow/Orbit/Fern.vcf'
-  const vault = cardVault({ [relPath]: { firstName: 'Fern', cover: 'cover.png' } })
-  const contact = vault.indexEntries[0]
+  const realm = cardRealm({ [relPath]: { firstName: 'Fern', cover: 'cover.png' } })
+  const contact = realm.indexEntries[0]
   const image = (path: string) => ({ relPath: path, title: path, kind: 'asset' as const, mtimeMs: 0 })
   const first = image('Meadow/Cover.png')
   const second = image('Archive/COVER.PNG')
-  const mock = createMockValleyApi({ manifest: { id: 'contacts' }, files: vault.files, indexEntries: [contact, first, second] })
+  const mock = createMockValleyApi({ manifest: { id: 'contacts' }, files: realm.files, indexEntries: [contact, first, second] })
   initRuntime(mock.api)
-  const read = vi.spyOn(mock.api.vault, 'readFile')
+  const read = vi.spyOn(mock.api.realm, 'readFile')
   const projection = createContactProjection(mock.api, () => mock.api.getState().indexEntries)
   const getSnapshot = () => {
     const contacts = projection.contacts(getSettings(mock.api))
@@ -325,7 +325,7 @@ it('preserves the first cover filename match when image order, names or membersh
 it('rereads a card only when its size or modification time moves, and evicts removed cards', async () => {
   const mock = setup({ contactsRoot: '/' })
   initRuntime(mock.api)
-  const read = vi.spyOn(mock.api.vault, 'readFile')
+  const read = vi.spyOn(mock.api.realm, 'readFile')
   const projection = createContactProjection(mock.api, () => mock.api.getState().indexEntries)
   const settings = getSettings(mock.api)
   const settle = async () => { projection.contacts(settings); await vi.waitFor(() => expect(projection.settled()).toBe(true)); return projection.contacts(settings) }
@@ -357,7 +357,7 @@ it('retains pending rename overlays through unrelated revisions and reconciles t
   const from = before.contacts[0].relPath
   const to = 'Meadow/Orbit/Fern.vcf'
   store.openContact(from)
-  await mock.api.vault.writeFile(to, await mock.api.vault.readFile(from))
+  await mock.api.realm.writeFile(to, await mock.api.realm.readFile(from))
   mock.emitFileRenamed(from, to)
   const pending = store.getSnapshot()
   mock.emitState({ indexEntries: mock.api.getState().indexEntries.slice() })
@@ -378,11 +378,11 @@ it('revokes the old index on A to B to A and keeps old-owner cleanup isolated', 
 
   await old.ready()
   const original = old.getSnapshot().contacts[0]
-  first.emitState({ vault: { path: '/managed/b', name: 'b', displayName: 'B' } })
+  first.emitState({ realm: { path: '/managed/b', name: 'b', displayName: 'B' } })
   const middle = old.getSnapshot().contacts[0]
   expect(middle).toBe(original)
   await expect(old.ready()).rejects.toThrow('revoked')
-  first.emitState({ vault: { path: '/managed/a', name: 'a', displayName: 'A' } })
+  first.emitState({ realm: { path: '/managed/a', name: 'a', displayName: 'A' } })
   expect(old.getSnapshot().contacts[0]).toBe(middle)
   await expect(old.ready()).rejects.toThrow('revoked')
   await first.api.settings.set('contactsRoot', 'Elsewhere')
@@ -400,7 +400,7 @@ it('revokes the old index on A to B to A and keeps old-owner cleanup isolated', 
   expect(next.getSnapshot().contacts.every((contact) => contact.nickname === 'Updated')).toBe(true)
 })
 
-it('does not carry a pending rename or its delayed refresh into another vault', async () => {
+it('does not carry a pending rename or its delayed refresh into another realm', async () => {
   vi.useFakeTimers()
   const mock = setup()
   initRuntime(mock.api)
@@ -412,7 +412,7 @@ it('does not carry a pending rename or its delayed refresh into another vault', 
   mock.emitFileRenamed(from, to)
   expect(store.getSnapshot().contacts.some((contact) => contact.relPath === to)).toBe(true)
   expect(vi.getTimerCount()).toBe(1)
-  mock.emitState({ vault: { path: '/managed/destination', name: 'destination', displayName: 'Destination' } })
+  mock.emitState({ realm: { path: '/managed/destination', name: 'destination', displayName: 'Destination' } })
   await expect(store.ready()).rejects.toThrow('revoked')
   expect(store.getSnapshot().contacts.some((contact) => contact.relPath === to)).toBe(true)
   expect(store.getSnapshot().selectedPath).toBe(to)

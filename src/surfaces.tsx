@@ -93,7 +93,7 @@ function snapshot(api: ValleyPluginApi, instanceId?: string): PluginSurfaceSnaps
 async function restore(owner: ValleyPluginApi, state: PluginLinkState, _instanceId?: string, options?: { background?: boolean }): Promise<void> {
   if (state.v !== 1) throw new Error('Unsupported Contacts bookmark.')
   if (_instanceId?.toLowerCase().endsWith('.vcf') && state.path === _instanceId) {
-    if (!await owner.vault.fileInfo(_instanceId)) throw new Error(uiText('contacts.error.missing'))
+    if (!await owner.realm.fileInfo(_instanceId)) throw new Error(uiText('contacts.error.missing'))
     if (!options?.background) await owner.workspace.openFile(_instanceId)
     return
   }
@@ -101,7 +101,7 @@ async function restore(owner: ValleyPluginApi, state: PluginLinkState, _instance
   await store.ready()
   if (typeof state.path === 'string') {
     const indexed = getContactIndex(owner).read().some((entry) => entry.relPath === state.path)
-    if (!(await owner.vault.fileInfo(state.path)) || (indexed && !loadContacts(owner).some((contact) => contact.relPath === state.path))) throw new Error(uiText('contacts.error.missing'))
+    if (!(await owner.realm.fileInfo(state.path)) || (indexed && !loadContacts(owner).some((contact) => contact.relPath === state.path))) throw new Error(uiText('contacts.error.missing'))
     store.openContact(state.path, { reveal: !options?.background })
   } else if (state.mode === 'graph') store.showGraph()
   else store.showList()

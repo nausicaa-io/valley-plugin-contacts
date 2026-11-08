@@ -9,7 +9,7 @@ import { initRuntime } from '../src/runtime'
 import { ContactFileView } from '../src/FileView'
 import { disposeStore, getStore } from '../src/store'
 import { registerContactFileCommands, type ContactCollection, type ContactFileAction } from '../src/fileViewCommands'
-import { cardVault, uidFor } from './cards'
+import { cardRealm, uidFor } from './cards'
 
 const path = 'Plants/Fern.vcf', relatedPath = 'Plants/Moss.vcf'
 const mountedView: MountedPluginView = { mountId: 'contact-main', generation: 1, area: 'main', paneId: 'pane', tabId: 'tab', filePath: path, pluginId: 'contacts' }
@@ -20,7 +20,7 @@ afterEach(async () => { cleanup(); for (const dispose of disposals.splice(0).rev
 
 function setup() {
   const mock = createMockValleyApi({ manifest: { id: 'contacts' }, groups: [{ id: 'friends', name: 'Friends', color: '#eab308' }, { id: 'work', name: 'Work', color: '#a855f7' }, { id: 'family', name: 'Family', color: '#16a34a' }], settings: { contactsRoot: 'Plants' },
-    ...cardVault({ [path]: { firstName: 'Fern', groups: ['Friends'], email: [{ value: 'fern@example.test' }], phone: [{ value: '+41 123' }], place: [{ value: 'Zurich' }], websites: ['https://example.com/fern'], socialMedia: [{ platform: 'github', handle: 'fern' }], relations: [{ to: uidFor(relatedPath), type: 'friend' }], birthdate: '--06-21', note: 'Original' }, [relatedPath]: { firstName: 'Moss' } }) })
+    ...cardRealm({ [path]: { firstName: 'Fern', groups: ['Friends'], email: [{ value: 'fern@example.test' }], phone: [{ value: '+41 123' }], place: [{ value: 'Zurich' }], websites: ['https://example.com/fern'], socialMedia: [{ platform: 'github', handle: 'fern' }], relations: [{ to: uidFor(relatedPath), type: 'friend' }], birthdate: '--06-21', note: 'Original' }, [relatedPath]: { firstName: 'Moss' } }) })
   initRuntime(mock.api); disposals.push(registerContactFileCommands(mock.api))
   const command = (id: string) => mock.commands.find(command => command.id === id || command.id.endsWith(`:${id}`))!
   const ajv = new Ajv({ strict: true })
@@ -73,15 +73,15 @@ describe('exact mounted Contact file actions', () => {
     await fixture.invoke({ type: 'row-add', collection: 'social' }); await fixture.invoke({ type: 'social-platform', index: 1, value: 'Instagram' }); await fixture.invoke({ type: 'row-edit', collection: 'social', index: 1, fields: { handle: 'canopy' } }); await fixture.invoke({ type: 'social-move', from: 1, to: 0 })
     expect(((await fixture.inspect()).form?.social as { value: { platform: string } }[])[0].value.platform).toBe('Instagram')
     await fixture.invoke({ type: 'flush' }, 'save')
-    expect(fixture.mock.api.vault.editors.save).toHaveBeenCalledWith(mountedView, expect.stringContaining('NOTE:Raw **Markdown**'), expect.any(Object), expect.any(String))
-    const saved = await fixture.mock.api.vault.readFile(path)
+    expect(fixture.mock.api.realm.editors.save).toHaveBeenCalledWith(mountedView, expect.stringContaining('NOTE:Raw **Markdown**'), expect.any(Object), expect.any(String))
+    const saved = await fixture.mock.api.realm.readFile(path)
     expect(saved).toContain('Bäume'); expect(saved).toContain('CATEGORIES:Family,Friends'); expect(saved).toContain('SOCIALPROFILE'); expect((await fixture.inspect()).form?.dirty).toBe(false)
     await fixture.invoke({ type: 'mode', value: 'reading' }); expect(rendered.container.querySelector('.ct-form')).not.toBeVisible()
   })
 
   it('saves reading group chips and executes the existing exact related, phone, email, web, social, address and settings actions', async () => {
     const fixture = setup(); render(<ContactFileView relPath={path} mountedView={mountedView} />); await fixture.ready()
-    await fixture.invoke({ type: 'reading-group-add', value: 'Work' }, 'save', { validateBeforeRun: async () => { await new Promise(resolve => setTimeout(resolve, 5)); return true } }); expect(await fixture.mock.api.vault.readFile(path)).toContain('CATEGORIES:Friends,Work')
+    await fixture.invoke({ type: 'reading-group-add', value: 'Work' }, 'save', { validateBeforeRun: async () => { await new Promise(resolve => setTimeout(resolve, 5)); return true } }); expect(await fixture.mock.api.realm.readFile(path)).toContain('CATEGORIES:Friends,Work')
     await fixture.invoke({ type: 'reading-group-remove', value: 'Work' }, 'save'); expect((await fixture.inspect()).reader?.groups).toEqual(['Friends'])
     const links = vi.spyOn(fixture.mock.api.links, 'open'), settings = vi.spyOn(fixture.mock.api.workspace, 'openSettings'), open = vi.spyOn(fixture.mock.api.workspace, 'openMainTab')
     const values = { phone: { category: 'phone', value: '+41 123' }, email: { category: 'email', value: 'fern@example.test' }, website: 'https://example.com/fern', social: 'https://github.com/fern', address: { category: 'location', value: 'Zurich' } }
@@ -132,15 +132,15 @@ describe('exact mounted Contact file actions', () => {
     await fixture.invoke({ type: 'patch', fields: { note: 'Retained exact owner draft' } }); expect(rendered.container.querySelectorAll('textarea.ct-notes-editor')[1]).toHaveValue('Retained exact owner draft')
     await expect(fixture.invoke({ type: 'patch', fields: { note: 'Alias overwrite' } }, 'control', {}, { mountId: other.mountId, generation: 1 })).rejects.toMatchObject({ code: 'CONTROL_UNAVAILABLE', outcome: 'not-applied' })
     await expect(fixture.invoke({ type: 'flush' }, 'save', {}, target, old.revision)).rejects.toMatchObject({ code: 'REVISION_CONFLICT' })
-    vi.mocked(fixture.mock.api.vault.editors.save).mockRejectedValueOnce(new Error('Lost save acknowledgement'))
+    vi.mocked(fixture.mock.api.realm.editors.save).mockRejectedValueOnce(new Error('Lost save acknowledgement'))
     await expect(fixture.invoke({ type: 'flush' }, 'save')).rejects.toMatchObject({ outcome: 'unknown', code: 'EFFECT_UNVERIFIED', retryable: false })
     expect((await fixture.inspect()).form).toMatchObject({ note: 'Retained exact owner draft', dirty: true, error: 'Lost save acknowledgement' })
     await fixture.invoke({ type: 'reload' }); await waitFor(async () => expect((await fixture.inspect()).form).toMatchObject({ note: 'Original', dirty: false, error: '', ready: true }))
-    const before = await fixture.mock.api.vault.readFile(path)
+    const before = await fixture.mock.api.realm.readFile(path)
     let resume!: (value: boolean) => void
     const pending = fixture.invoke({ type: 'patch', fields: { note: 'Late change' } }, 'control', { validateBeforeRun: () => new Promise(resolve => { resume = resolve }) })
     await waitFor(() => expect(resume).toBeTypeOf('function')); const refused = expect(pending).rejects.toMatchObject({ code: 'TARGET_REPLACED', outcome: 'not-applied' }); rendered.unmount(); await act(async () => resume(true)); await refused
-    expect(await fixture.mock.api.vault.readFile(path)).toBe(before)
+    expect(await fixture.mock.api.realm.readFile(path)).toBe(before)
   })
 
   it('rejects unsupported schemas/routes/identities and malformed raw rows before dispatch', () => {
@@ -157,8 +157,8 @@ describe('exact mounted Contact file actions', () => {
     await fixture.invoke({ type: 'patch', fields: { note: 'Committed before rename', fileName: 'Renamed Fern' } })
     const validateBeforeRun = vi.fn(async (targets?: { path: string }[]) => { await new Promise(resolve => setTimeout(resolve, 5)); return !targets?.some(target => target.path === 'Plants/Renamed Fern.vcf') })
     await expect(fixture.invoke({ type: 'flush' }, 'save', { validateBeforeRun })).rejects.toMatchObject({ outcome: 'unknown', code: 'EFFECT_UNVERIFIED', retryable: false })
-    expect(await fixture.mock.api.vault.readFile(path)).toContain('NOTE:Committed before rename')
-    expect(await fixture.mock.api.vault.stat('Plants/Renamed Fern.vcf')).toBeNull()
+    expect(await fixture.mock.api.realm.readFile(path)).toContain('NOTE:Committed before rename')
+    expect(await fixture.mock.api.realm.stat('Plants/Renamed Fern.vcf')).toBeNull()
     expect(validateBeforeRun).toHaveBeenCalledWith([{ kind: 'file', path, fileOperation: 'write' }, { kind: 'file', path: 'Plants/Renamed Fern.vcf', fileOperation: 'write' }])
     expect((await fixture.inspect()).form).toMatchObject({ note: 'Committed before rename', fileName: 'Renamed Fern' })
   })

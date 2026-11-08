@@ -151,7 +151,7 @@ function registerContactEditor(owner: ValleyPluginApi, path: string, instanceId:
   return () => { active = false; draft.mounts.delete(instanceId); draft.owners.delete(instanceId); off() }
 }
 
-export const registerContactFileEditor = (owner: ValleyPluginApi, view: MountedPluginView): (() => void) => registerContactEditor(owner, view.filePath, view.mountId, { view }, provider => owner.vault.editors.register(view, provider))
+export const registerContactFileEditor = (owner: ValleyPluginApi, view: MountedPluginView): (() => void) => registerContactEditor(owner, view.filePath, view.mountId, { view }, provider => owner.realm.editors.register(view, provider))
 
 /** Create / edit form rendering the contact schema as clean inputs. */
 function relationDrafts(contact: Contact, contacts: Contact[]): RelDraft[] {
@@ -190,7 +190,7 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
   const mountedKey = mountedView ? JSON.stringify([mountedView.mountId, mountedView.generation, mountedView.area, mountedView.paneId, mountedView.tabId, mountedView.filePath, mountedView.pluginId]) : ''
   React.useEffect(() => {
     if (mountedKey || !contact?.relPath) return
-    return registerContactEditor(api, contact.relPath, instanceId, { path: contact.relPath, instanceId }, provider => api.vault.editors.registerDocument(contact.relPath, instanceId, provider))
+    return registerContactEditor(api, contact.relPath, instanceId, { path: contact.relPath, instanceId }, provider => api.realm.editors.registerDocument(contact.relPath, instanceId, provider))
   }, [api, contact?.relPath, instanceId, mountedKey])
   const form = React.useRef<HTMLDivElement>(null)
   const [prepared, setPrepared] = React.useState(false)

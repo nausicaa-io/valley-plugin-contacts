@@ -1,5 +1,5 @@
 /**
- * Contacts — an address book over the vault's vCard files (one `.vcf` per
+ * Contacts — an address book over the realm's vCard files (one `.vcf` per
  * person under the configured folder, empty by default). The core index
  * lists the files; only changed cards are read. It presents a virtual group
  * tree (ordered `CATEGORIES`, never real folders), a structured contact view

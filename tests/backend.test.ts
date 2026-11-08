@@ -22,12 +22,12 @@ function fixture() {
   }
   const api = {
     settings: { get: () => ({ contactsRoot: 'People' }) },
-    vault: {
+    realm: {
       read: vi.fn(async (path: string) => { controller.signal.throwIfAborted(); const content = files.get(path); return { content: content ?? '', baseline: content === undefined ? null : observed(content) } }),
       stat: vi.fn(async (path: string) => files.has(path) ? { relPath: path } : null),
       write: vi.fn(async (path: string, content: string, expected: FileBaseline | null) => { if (!check(path, expected)) return { ok: false, reason: 'conflict' }; files.set(path, content); return { ok: true, baseline: observed(content) } }),
       rename: vi.fn(async (path: string, target: string, expected: FileBaseline) => { if (!check(path, expected) || files.has(target)) return { ok: false, reason: 'conflict' }; const content = files.get(path)!; files.delete(path); files.set(target, content); return { ok: true, relPath: target, baseline: observed(content) } }),
-      trash: vi.fn(async (path: string, expected: FileBaseline) => { if (!check(path, expected)) return { ok: false, reason: 'conflict' }; const token = crypto.randomUUID(); trash.set(token, { path, content: files.get(path)! }); files.delete(path); return { ok: true, destination: 'vault', token } }),
+      trash: vi.fn(async (path: string, expected: FileBaseline) => { if (!check(path, expected)) return { ok: false, reason: 'conflict' }; const token = crypto.randomUUID(); trash.set(token, { path, content: files.get(path)! }); files.delete(path); return { ok: true, destination: 'realm', token } }),
       restore: vi.fn(async (token: string) => { const item = trash.get(token); if (!item || !check(item.path, null)) return { ok: false }; files.set(item.path, item.content); trash.delete(token); return { ok: true, restoredPath: item.path } })
     },
     index: { observe: vi.fn(async () => ({ read: async ({ offset, limit }: { offset: number; limit: number }) => { const entries = [...files.keys()].filter(path => path.startsWith('People/') && path.endsWith('.vcf')); return { status: 'ready', entries: entries.slice(offset, offset + limit).map(relPath => ({ relPath })), next: entries.length > offset + limit ? offset + limit : null } }, dispose: vi.fn() })) },
@@ -58,7 +58,7 @@ it('registers concrete input and output contracts for every supported data opera
   }
 })
 
-it('keeps an empty folder in backend reads and creates cards at the vault root', async () => {
+it('keeps an empty folder in backend reads and creates cards at the realm root', async () => {
   const f = fixture()
   vi.spyOn(f.api.settings, 'get').mockReturnValue({ contactsRoot: '' })
   await f.call('contacts.list', { limit: 1 })
@@ -106,7 +106,7 @@ it('rejects external edits, unsaved editor conflicts, and cancellation without w
 
 it('reports a failed rename as an error instead of a completed rename', async () => {
   const f = fixture(), before = await f.call('contacts.read', { path: 'People/River Moss.vcf' })
-  f.api.vault.rename.mockResolvedValueOnce({ ok: false, reason: 'conflict' })
+  f.api.realm.rename.mockResolvedValueOnce({ ok: false, reason: 'conflict' })
   await expect(f.call('contacts.rename', { path: before.contact.relPath, expected: before.baseline, fileName: 'Renamed' })).rejects.toMatchObject({ code: 'RENAME_CONFLICT', outcome: 'not-applied' })
   expect(f.files.has(before.contact.relPath)).toBe(true)
 })
@@ -137,8 +137,8 @@ it('refuses unknown files, the configuration folder, malformed input and foreign
   await expect(f.raw('contacts.update', { path: 'People/River Moss.vcf', expected: before.baseline, patch: {} })).rejects.toMatchObject(refused('INVALID_INPUT'))
   await expect(f.raw('contacts.read', { path: 'People/River Moss.txt' })).rejects.toMatchObject(refused('INVALID_INPUT'))
   await expect(f.call('contacts.restore', { token: 'forged-receipt' })).rejects.toMatchObject(refused('RESTORE_TOKEN_UNKNOWN'))
-  expect(f.api.vault.write).not.toHaveBeenCalled()
-  expect(f.api.vault.restore).not.toHaveBeenCalled()
+  expect(f.api.realm.write).not.toHaveBeenCalled()
+  expect(f.api.realm.restore).not.toHaveBeenCalled()
   const removed = await f.call('contacts.delete', { path: before.contact.relPath, expected: before.baseline })
   f.files.set(before.contact.relPath, card)
   await expect(f.call('contacts.restore', { token: removed.token })).rejects.toMatchObject(refused('RESTORE_CONFLICT'))
@@ -146,7 +146,7 @@ it('refuses unknown files, the configuration folder, malformed input and foreign
   expect((await f.call('contacts.restore', { token: removed.token })).restoredPath).toBe(before.contact.relPath)
 })
 
-it('reports every refusal that precedes a vault effect as not applied, and keeps an attempted effect uncertain', async () => {
+it('reports every refusal that precedes a realm effect as not applied, and keeps an attempted effect uncertain', async () => {
   const f = fixture(), before = await f.call('contacts.read', { path: 'People/River Moss.vcf' })
   f.files.set('People/Broken.vcf', 'not a vCard')
   const broken = await f.raw('contacts.read', { path: 'People/Broken.vcf' }).catch(error => error)
@@ -155,12 +155,12 @@ it('reports every refusal that precedes a vault effect as not applied, and keeps
   await expect(f.call('contacts.update', { path: 'People/Broken.vcf', expected: any, patch: { note: 'X' } })).rejects.toMatchObject({ code: 'INVALID_CONTACT', outcome: 'not-applied' })
   await expect(f.call('contacts.delete', { path: 'People/Broken.vcf', expected: any })).rejects.toMatchObject({ code: 'INVALID_CONTACT', outcome: 'not-applied' })
   await expect(f.call('contacts.rename', { path: 'People/Broken.vcf', expected: any, fileName: 'Fixed' })).rejects.toMatchObject({ code: 'INVALID_CONTACT', outcome: 'not-applied' })
-  f.api.vault.trash.mockResolvedValueOnce({ ok: false, reason: 'conflict' })
+  f.api.realm.trash.mockResolvedValueOnce({ ok: false, reason: 'conflict' })
   await expect(f.call('contacts.delete', { path: before.contact.relPath, expected: before.baseline })).rejects.toMatchObject({ code: 'REVISION_CONFLICT', outcome: 'not-applied' })
-  expect(f.api.vault.write).not.toHaveBeenCalled()
+  expect(f.api.realm.write).not.toHaveBeenCalled()
   expect(f.files.get('People/Broken.vcf')).toBe('not a vCard')
   expect(f.files.get(before.contact.relPath)).toBe(card)
-  f.api.vault.write.mockRejectedValueOnce(new Error('Vault write failed'))
+  f.api.realm.write.mockRejectedValueOnce(new Error('Realm write failed'))
   await expect(f.call('contacts.update', { path: before.contact.relPath, expected: before.baseline, patch: { note: 'X' } })).rejects.not.toMatchObject({ outcome: 'not-applied' })
   f.controller.abort()
   await expect(f.call('contacts.update', { path: before.contact.relPath, expected: before.baseline, patch: { note: 'Cancelled' } })).rejects.toMatchObject({ outcome: 'not-applied' })
@@ -183,10 +183,10 @@ it('keeps a large photo byte for byte without refolding it and refuses results t
   f.files.set(path, card.replace('PHOTO:data:image/png;base64,AA==', foldLine(huge)))
   const content = f.files.get(path)!
   await expect(f.call('contacts.read', { path })).rejects.toMatchObject({ code: 'RESOURCE_LIMIT', outcome: 'not-applied' })
-  const writes = f.api.vault.write.mock.calls.length
+  const writes = f.api.realm.write.mock.calls.length
   const current = { mtimeMs: 1, size: Buffer.byteLength(content), hash: createHash('sha256').update(content).digest('hex') }
   await expect(f.call('contacts.update', { path, expected: current, patch: { note: 'Too large to answer' } })).rejects.toMatchObject({ code: 'RESOURCE_LIMIT', outcome: 'not-applied' })
-  expect(f.api.vault.write.mock.calls.length).toBe(writes)
+  expect(f.api.realm.write.mock.calls.length).toBe(writes)
   expect(f.files.get(path)).toBe(content)
 })
 

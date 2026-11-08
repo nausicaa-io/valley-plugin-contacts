@@ -94,7 +94,7 @@ describe('reading other address books', () => {
   it('reads an Apple-style vCard 3.0 with labels, photos and related names', () => {
     const raw = [
       'BEGIN:VCARD', 'VERSION:3.0', 'PRODID:-//Apple Inc.//macOS//EN', 'N:Moss;Mira;Ann;Dr.;', 'FN:Dr. Mira Moss', 'NICKNAME:Mimi',
-      'ORG:Seed Bank;Vault', 'TITLE:Keeper', 'item1.EMAIL;type=INTERNET;type=pref:mira@seed.example', 'item1.X-ABLabel:_$!<Other>!$_',
+      'ORG:Seed Bank;Realm', 'TITLE:Keeper', 'item1.EMAIL;type=INTERNET;type=pref:mira@seed.example', 'item1.X-ABLabel:_$!<Other>!$_',
       'TEL;type=CELL;type=VOICE;type=pref:+99 111 111 11', 'item2.ADR;type=HOME:;;Moosweg 4;Mossville;;12345;Fernland', 'item2.X-ABADR:ch',
       'BDAY;VALUE=date:1984-02-29', 'item3.X-ABRELATEDNAMES:Fern Blüten', 'item3.X-ABLabel:_$!<Sister>!$_',
       'X-SOCIALPROFILE;type=twitter;x-user=mira:http://twitter.com/mira', 'URL;type=HOME:https\\://mira.example',
@@ -103,7 +103,7 @@ describe('reading other address books', () => {
     const contact = parseContactFile('Imports/Mira.vcf', raw)
     expect(contact).toMatchObject({
       firstName: 'Mira', middleName: 'Ann', lastName: 'Moss', nickname: 'Mimi', displayName: 'Mimi', birthdate: '1984-02-29',
-      organization: [{ name: 'Seed Bank', dept: 'Vault', title: 'Keeper' }], email: [{ value: 'mira@seed.example', type: 'Other' }],
+      organization: [{ name: 'Seed Bank', dept: 'Realm', title: 'Keeper' }], email: [{ value: 'mira@seed.example', type: 'Other' }],
       phone: [{ value: '+99 111 111 11', type: 'Mobile' }], place: [{ value: 'Moosweg 4, 12345 Mossville, Fernland', type: 'Home' }],
       relations: [{ to: 'Fern Blüten', type: 'family', role: 'Sister' }], socialMedia: [{ platform: 'twitter', handle: 'mira', url: 'http://twitter.com/mira' }],
       websites: ['https://mira.example'], groups: ['Seeds', 'Friends'], photo: 'data:image/jpeg;base64,AAAA', uid: ''
@@ -208,7 +208,7 @@ describe('resolveCoverPath', () => {
     { relPath: 'Plants/readme.md', title: 'readme', kind: 'note' as const, mtimeMs: 0 }
   ]
 
-  it('resolves exact paths and filename-only covers to vault images', () => {
+  it('resolves exact paths and filename-only covers to realm images', () => {
     expect(resolveCoverPath(entries, 'Plants/fern.jpg')).toBe('Plants/fern.jpg')
     expect(resolveCoverPath(entries, 'fern.jpg')).toBe('Plants/fern.jpg')
   })

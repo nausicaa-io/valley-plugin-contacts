@@ -26,7 +26,7 @@ export function fileEntry(relPath: string, content: string, mtimeMs = 1): IndexE
 }
 
 /** Files plus matching index entries for a set of cards. */
-export function cardVault(cards: Record<string, Partial<Contact>>, extra: Record<string, string> = {}): { files: Record<string, string>; indexEntries: IndexEntry[] } {
+export function cardRealm(cards: Record<string, Partial<Contact>>, extra: Record<string, string> = {}): { files: Record<string, string>; indexEntries: IndexEntry[] } {
   const files: Record<string, string> = { ...extra }
   for (const [relPath, fields] of Object.entries(cards)) files[relPath] = cardAt(relPath, fields)
   return { files, indexEntries: Object.entries(files).map(([relPath, content]) => fileEntry(relPath, content)) }

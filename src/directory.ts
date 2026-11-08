@@ -29,7 +29,7 @@ export function registerDirectory(api: ValleyPluginApi): () => Promise<void> {
         await Promise.all(Array.from({ length: Math.min(4, batch.length) }, async () => {
           while (!disposed && next < batch.length) {
             const path = batch[next++]
-            const info = await api.vault.fileInfo(path).catch(() => null)
+            const info = await api.realm.fileInfo(path).catch(() => null)
             if (!disposed && !pendingAssets.has(path)) coverVersions.set(path, info ? `${info.mtimeMs}:${info.size}` : 'missing')
           }
         }))
@@ -78,7 +78,7 @@ export function registerDirectory(api: ValleyPluginApi): () => Promise<void> {
   }
   refresh()
   const offStore = store.subscribe(refresh)
-  const offFiles = api.vault.onChanged((info) => {
+  const offFiles = api.realm.onChanged((info) => {
     refreshAssets(coverPaths().filter((path) => info.full || info.changes.some((change) => change.relPath === path || path.startsWith(`${change.relPath}/`))))
   })
   const offService = api.interop.services.provide(CONTACTS_DIRECTORY_V1, {

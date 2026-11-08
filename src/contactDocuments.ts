@@ -8,7 +8,7 @@ export const UNTITLED_FILE_BASE = 'Untitled'
 export interface ContactDocumentOwner {
   root(): string
   assertCurrent(): void
-  vault: Pick<ValleyPluginApi['vault'], 'stat' | 'readTextDocument' | 'writeTextDocumentGuarded' | 'createTextDocumentGuarded' | 'renameTextDocumentGuarded' | 'trashTextDocumentGuarded'>
+  realm: Pick<ValleyPluginApi['realm'], 'stat' | 'readTextDocument' | 'writeTextDocumentGuarded' | 'createTextDocumentGuarded' | 'renameTextDocumentGuarded' | 'trashTextDocumentGuarded'>
   saveEditor?(path: string, content: string, before: TextDocumentRead): Promise<GuardedTextDocumentResult>
   validateBeforeEffect?(paths: string[]): Promise<void>
 }
@@ -35,13 +35,13 @@ function fileBase(relPath: string): string {
 }
 
 /**
- * Whether nothing occupies `relPath`. Asks disk, never the vault index — the
+ * Whether nothing occupies `relPath`. Asks disk, never the realm index — the
  * index lags our own writes by a watcher round-trip, and a stale "occupied" hit
  * would number a contact away from a name it just vacated (e.g. on ⌘Z).
  */
 async function pathIsFree(owner: ContactDocumentOwner, relPath: string, ignore?: string): Promise<boolean> {
   if (ignore && relPath.toLowerCase() === ignore.toLowerCase()) return true
-  return (await owner.vault.stat(relPath)) === null
+  return (await owner.realm.stat(relPath)) === null
 }
 
 /**
@@ -78,11 +78,11 @@ export async function renameContactFile(relPath: string, targetBase: string, doc
   // Any rename attempt spends the receipt; a fresh one is only valid while the
   // file still holds exactly the bytes this save wrote.
   const recapture = async (path: string): Promise<TextDocumentRead | null> => {
-    const fresh = await owner.vault.readTextDocument(path).catch(() => null)
+    const fresh = await owner.realm.readTextDocument(path).catch(() => null)
     return fresh && fresh.content === document.content ? fresh : null
   }
   await owner.validateBeforeEffect?.([relPath, newRelPath])
-  const result = await owner.vault.renameTextDocumentGuarded(relPath, newRelPath, document.revisionToken)
+  const result = await owner.realm.renameTextDocumentGuarded(relPath, newRelPath, document.revisionToken)
   if (!result.ok) {
     console.warn(`[contacts] Could not rename ${relPath} → ${newRelPath}: ${result.reason}`)
     return { relPath, document: await recapture(relPath) }
@@ -114,7 +114,7 @@ export interface ContactSave {
 export async function readContactDocument(path: string, owner: ContactDocumentOwner): Promise<TextDocumentRead> {
   const index = owner
   index.assertCurrent()
-  const document = await owner.vault.readTextDocument(path)
+  const document = await owner.realm.readTextDocument(path)
   index.assertCurrent()
   if (!document) throw new Error(uiText('contacts.error.load'))
   return document
@@ -148,8 +148,8 @@ export async function saveContact(
   const written = before
     ? owner.saveEditor ? await owner.saveEditor(relPath, content, before) : content === before.content
       ? { ok: true as const, revisionToken: before.revisionToken, editorConflict: false }
-      : await owner.vault.writeTextDocumentGuarded(relPath, content, before.revisionToken)
-    : await owner.vault.createTextDocumentGuarded(relPath, content)
+      : await owner.realm.writeTextDocumentGuarded(relPath, content, before.revisionToken)
+    : await owner.realm.createTextDocumentGuarded(relPath, content)
   if (!written.ok) return null
   let document: TextDocumentRead | null = 'revisionToken' in written && written.revisionToken ? { content, revisionToken: written.revisionToken } : null
   const editorConflict = 'editorConflict' in written && written.editorConflict
@@ -170,7 +170,7 @@ export async function saveContact(
     let receipt = document
     document = null
     if (!before) {
-      const removed = await owner.vault.trashTextDocumentGuarded(restorePath, receipt.revisionToken)
+      const removed = await owner.realm.trashTextDocumentGuarded(restorePath, receipt.revisionToken)
       if (!removed.ok) throw new Error(uiText('contacts.error.deleteChanged'))
       restored = true
       const warning = contactTrashWarning(removed)
@@ -184,7 +184,7 @@ export async function saveContact(
       receipt = back.document
     }
     if (receipt.content === before.content) { restored = true; return }
-    const result = await owner.vault.writeTextDocumentGuarded(restorePath, before.content, receipt.revisionToken)
+    const result = await owner.realm.writeTextDocumentGuarded(restorePath, before.content, receipt.revisionToken)
     if (!result.ok) throw new Error(uiText('contacts.error.changed'))
     restored = true
     if (result.editorConflict) throw new Error(uiText('contacts.error.changed'))
@@ -204,12 +204,12 @@ function renameTargetFor(contact: Contact, relPath: string, opts: SaveContactOpt
   return current === before ? after : null
 }
 
-/** Soft-delete a contact file (undoable, into the vault trash). */
+/** Soft-delete a contact file (undoable, into the realm trash). */
 export async function deleteContact(relPath: string, owner: ContactDocumentOwner, document?: TextDocumentRead): Promise<Extract<GuardedTextDocumentTrashResult, { ok: true }>> {
   const before = document ?? await readContactDocument(relPath, owner)
   parseContactFile(relPath, before.content)
   owner.assertCurrent()
-  const result = await owner.vault.trashTextDocumentGuarded(relPath, before.revisionToken)
+  const result = await owner.realm.trashTextDocumentGuarded(relPath, before.revisionToken)
   if (!result.ok) throw new Error(uiText('contacts.error.deleteChanged'))
   return result
 }

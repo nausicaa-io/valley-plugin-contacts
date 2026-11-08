@@ -183,11 +183,11 @@ it('keeps a held command write and undo attached to the API that accepted it', a
   const first = setup([contact('Fern')])
   cleanups.push(registerContactsCommands(first.api), () => getContactIndex(first.api).dispose())
   await getStore(first.api).ready()
-  const read = first.api.vault.readTextDocument
+  const read = first.api.realm.readTextDocument
   let release!: () => void
   const blocked = new Promise<void>(resolve => { release = resolve })
   releases.push(release)
-  const readSpy = vi.spyOn(first.api.vault, 'readTextDocument').mockImplementationOnce(async path => { const captured = await read(path); await blocked; return captured })
+  const readSpy = vi.spyOn(first.api.realm, 'readTextDocument').mockImplementationOnce(async path => { const captured = await read(path); await blocked; return captured })
   const writing = first.api.commands.execute('contacts:edit-fields', { path: 'Meadow/Orbit/Fern.vcf', values: { nickname: 'Old owner' } })
   await vi.waitFor(() => expect(readSpy).toHaveBeenCalled())
   const second = setup([contact('Moss')])
@@ -195,6 +195,6 @@ it('keeps a held command write and undo attached to the API that accepted it', a
   await getStore(second.api).ready()
   release()
   await expect(writing).resolves.toMatchObject({ ok: true, value: { nickname: 'Old owner' } })
-  expect(first.api.vault.writeTextDocumentGuarded).toHaveBeenCalledOnce()
+  expect(first.api.realm.writeTextDocumentGuarded).toHaveBeenCalledOnce()
   expect(second.driverCalls).toEqual([])
 })

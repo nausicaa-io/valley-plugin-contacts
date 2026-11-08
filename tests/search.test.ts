@@ -6,7 +6,7 @@ import config from '../config.json'
 import { initRuntime } from '../src/runtime'
 import { disposeStore, getStore } from '../src/store'
 import { registerContactSearch } from '../src/search'
-import { cardAt, cardVault, fileEntry } from './cards'
+import { cardAt, cardRealm, fileEntry } from './cards'
 
 let dispose: (() => Promise<void>) | undefined
 let owner: ValleyPluginApi | undefined
@@ -22,7 +22,7 @@ function setup() {
     manifest: { id: 'contacts', datasets: config.datasets as DatasetDeclaration[] },
     settings: { contactsRoot: 'Meadow' },
     datasets: { 'contacts.note_search': [{ path: 'Meadow/Old.vcf', name: 'Old', note: '#stale' }] },
-    ...cardVault({
+    ...cardRealm({
       'Meadow/Fern.vcf': { firstName: 'Fern', note: 'Observe #Ökologie and #field/work', groups: ['ignored-group'] },
       'Meadow/Moss.vcf': { firstName: 'Moss', note: '' },
       'Forest/Oak.vcf': { firstName: 'Oak', note: '#outside' }
@@ -47,17 +47,17 @@ it('reconciles the cache from scoped cards and updates notes, renames, deletion,
   const rows = () => mock.datasets.get('contacts.note_search')
   await expect.poll(rows).toEqual([{ path: 'Meadow/Fern.vcf', name: 'Fern', note: 'Observe #Ökologie and #field/work' }])
   const changed = cardAt('Meadow/Fern.vcf', { firstName: 'Fern', note: 'Updated #spores' })
-  await mock.api.vault.writeFile('Meadow/Fern.vcf', changed)
+  await mock.api.realm.writeFile('Meadow/Fern.vcf', changed)
   mock.emitState({ indexEntries: mock.api.getState().indexEntries.map(entry => entry.relPath === 'Meadow/Fern.vcf' ? fileEntry(entry.relPath, changed, 2) : entry) })
   await expect.poll(rows).toEqual([{ path: 'Meadow/Fern.vcf', name: 'Fern', note: 'Updated #spores' }])
-  await mock.api.vault.writeFile('Meadow/Renamed.vcf', changed)
+  await mock.api.realm.writeFile('Meadow/Renamed.vcf', changed)
   mock.emitState({ indexEntries: mock.api.getState().indexEntries.map(entry => entry.relPath === 'Meadow/Fern.vcf' ? fileEntry('Meadow/Renamed.vcf', changed, 3) : entry) })
   await expect.poll(rows).toEqual([{ path: 'Meadow/Renamed.vcf', name: 'Fern', note: 'Updated #spores' }])
   mock.emitState({ indexEntries: mock.api.getState().indexEntries.filter(entry => entry.relPath !== 'Meadow/Renamed.vcf') })
   await expect.poll(rows).toEqual([])
   await mock.api.settings.set('contactsRoot', 'Forest')
   await expect.poll(rows).toEqual([{ path: 'Forest/Oak.vcf', name: 'Oak', note: '#outside' }])
-  expect(await mock.api.vault.readFile('Meadow/Fern.vcf')).toBe(changed)
+  expect(await mock.api.realm.readFile('Meadow/Fern.vcf')).toBe(changed)
 })
 
 it('coalesces edits during a write and avoids writes for unchanged presentation state', async () => {
@@ -71,7 +71,7 @@ it('coalesces edits during a write and avoids writes for unchanged presentation 
   dispose = registerContactSearch(mock.api)
   await expect.poll(() => batch.mock.calls.length).toBe(1)
   const content = cardAt('Meadow/Fern.vcf', { firstName: 'Fern', note: '#latest' })
-  await mock.api.vault.writeFile('Meadow/Fern.vcf', content)
+  await mock.api.realm.writeFile('Meadow/Fern.vcf', content)
   mock.emitState({ indexEntries: mock.api.getState().indexEntries.map(entry => entry.relPath === 'Meadow/Fern.vcf' ? fileEntry(entry.relPath, content, 9) : entry) })
   await expect.poll(() => getStore(mock.api).getSnapshot().contacts[0]?.note).toBe('#latest')
   release()
@@ -83,7 +83,7 @@ it('coalesces edits during a write and avoids writes for unchanged presentation 
   expect(batch).toHaveBeenCalledTimes(2)
 })
 
-it('does not publish an initial cache read after disposal or a vault switch', async () => {
+it('does not publish an initial cache read after disposal or a realm switch', async () => {
   const mock = setup()
   await getStore(mock.api).ready()
   const dataset = mock.api.data.dataset('contacts.note_search')
@@ -95,7 +95,7 @@ it('does not publish an initial cache read after disposal or a vault switch', as
   dispose = registerContactSearch(mock.api)
   await expect.poll(() => query.mock.calls.length).toBe(1)
   const drained = dispose()
-  mock.emitState({ vault: { path: '/managed/other', name: 'other', displayName: 'Other' } })
+  mock.emitState({ realm: { path: '/managed/other', name: 'other', displayName: 'Other' } })
   release()
   await drained
   expect(batch).not.toHaveBeenCalled()

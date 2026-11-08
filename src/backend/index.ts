@@ -45,7 +45,7 @@ export const outputSchemas = {
   'contacts.read': z.object({ contact: contactSchema, content: z.string(), baseline }).strict(),
   'contacts.create': savedSchema,
   'contacts.update': savedSchema,
-  'contacts.delete': z.object({ ok: z.literal(true), destination: z.enum(['system', 'vault']), token: z.string().optional(), editorConflict: z.boolean(), recoverySaved: z.boolean() }).strict(),
+  'contacts.delete': z.object({ ok: z.literal(true), destination: z.enum(['system', 'realm']), token: z.string().optional(), editorConflict: z.boolean(), recoverySaved: z.boolean() }).strict(),
   'contacts.rename': savedSchema,
   'contacts.restore': z.object({ ok: z.literal(true), restoredPath: z.string() }).strict()
 }
@@ -77,7 +77,7 @@ function parse<M extends keyof typeof inputSchemas>(method: M, raw: unknown): z.
   const result = inputSchemas[method].safeParse(raw)
   if (!result.success) throw refused('INVALID_INPUT', result.error.issues.map(issue => `${issue.path.join('.') || 'input'}: ${issue.message}`).join('; ').slice(0, 1000))
   const path = (result.data as { path?: unknown }).path
-  if (typeof path === 'string' && path.split('/')[0].toLowerCase() === CONFIG_DIR) throw refused('PATH_REFUSED', 'Contacts cannot use files in the vault configuration folder')
+  if (typeof path === 'string' && path.split('/')[0].toLowerCase() === CONFIG_DIR) throw refused('PATH_REFUSED', 'Contacts cannot use files in the realm configuration folder')
   return result.data as z.infer<(typeof inputSchemas)[M]>
 }
 function conflict(): never { throw Object.assign(new Error('Contact changed; read its current revision before editing'), { code: 'REVISION_CONFLICT', outcome: 'not-applied' }) }
@@ -96,15 +96,15 @@ function documentOwner(context: PluginBackendOperationContext) {
   const assertCurrent = () => context.cancellation.throwIfAborted()
   const owner: ContactDocumentOwner = {
     root: () => rootFor(context.api), assertCurrent,
-    vault: {
-      stat: file => context.api.vault.stat(file),
-      readTextDocument: async file => { assertCurrent(); const value = await context.api.vault.read(file); assertCurrent(); return value?.baseline ? issue(file, value.content, value.baseline) : null },
-      createTextDocumentGuarded: async (file, content) => { assertCurrent(); attempt(); const result = mutationResult(await context.api.vault.write(file, content, null)); return result.ok ? { ok: true, revisionToken: issue(file, content, result.baseline).revisionToken, editorConflict: false } : result },
-      writeTextDocumentGuarded: async (file, content, token) => { const previous = take(file, token); assertCurrent(); attempt(); const result = mutationResult(await context.api.vault.write(file, content, previous.baseline)); return result.ok ? { ok: true, revisionToken: issue(file, content, result.baseline).revisionToken, editorConflict: false } : result },
-      renameTextDocumentGuarded: async (file, target, token) => { const previous = take(file, token); assertCurrent(); attempt(); const result = await context.api.vault.rename(file, target, previous.baseline); if (!result.ok) throw Object.assign(new Error(`Contact rename failed: ${result.reason}`), { code: 'RENAME_CONFLICT', outcome: committed ? 'unknown' : 'not-applied' }); mutationResult(result); return result.ok ? { ok: true, relPath: result.relPath, revisionToken: result.baseline.hash === previous.baseline.hash ? issue(result.relPath, previous.content, result.baseline).revisionToken : null, editorConflict: result.baseline.hash !== previous.baseline.hash } : result },
+    realm: {
+      stat: file => context.api.realm.stat(file),
+      readTextDocument: async file => { assertCurrent(); const value = await context.api.realm.read(file); assertCurrent(); return value?.baseline ? issue(file, value.content, value.baseline) : null },
+      createTextDocumentGuarded: async (file, content) => { assertCurrent(); attempt(); const result = mutationResult(await context.api.realm.write(file, content, null)); return result.ok ? { ok: true, revisionToken: issue(file, content, result.baseline).revisionToken, editorConflict: false } : result },
+      writeTextDocumentGuarded: async (file, content, token) => { const previous = take(file, token); assertCurrent(); attempt(); const result = mutationResult(await context.api.realm.write(file, content, previous.baseline)); return result.ok ? { ok: true, revisionToken: issue(file, content, result.baseline).revisionToken, editorConflict: false } : result },
+      renameTextDocumentGuarded: async (file, target, token) => { const previous = take(file, token); assertCurrent(); attempt(); const result = await context.api.realm.rename(file, target, previous.baseline); if (!result.ok) throw Object.assign(new Error(`Contact rename failed: ${result.reason}`), { code: 'RENAME_CONFLICT', outcome: committed ? 'unknown' : 'not-applied' }); mutationResult(result); return result.ok ? { ok: true, relPath: result.relPath, revisionToken: result.baseline.hash === previous.baseline.hash ? issue(result.relPath, previous.content, result.baseline).revisionToken : null, editorConflict: result.baseline.hash !== previous.baseline.hash } : result },
       trashTextDocumentGuarded: async (file, token) => {
         const previous = take(file, token); assertCurrent(); attempt()
-        const result = await context.api.vault.trash(file, previous.baseline)
+        const result = await context.api.realm.trash(file, previous.baseline)
         if (!result.ok && !committed) throw refused('REVISION_CONFLICT', 'Contact changed; read its current revision before deleting')
         return result.ok ? { ...result, editorConflict: false, recoverySaved: true } : result
       }
@@ -118,7 +118,7 @@ export function handlers(context: PluginBackendOperationContext, session: Contac
   const { owner, attempt, untouched, baselineFor } = documentOwner(context)
   const read = async (file: string, expected?: FileBaseline) => {
     owner.assertCurrent()
-    const document = await owner.vault.readTextDocument(file)
+    const document = await owner.realm.readTextDocument(file)
     if (!document) throw refused('NOT_FOUND', 'Contact file does not exist')
     const observed = baselineFor(document)!
     if (expected && (expected.hash !== observed.hash || expected.size !== observed.size)) conflict()
@@ -164,14 +164,14 @@ export function handlers(context: PluginBackendOperationContext, session: Contac
       const input = parse('contacts.restore', raw)
       if (!session.trashTokens.has(input.token)) throw refused('RESTORE_TOKEN_UNKNOWN', 'This trash receipt was not issued by the running Contacts backend')
       attempt()
-      const result = await context.api.vault.restore(input.token)
+      const result = await context.api.realm.restore(input.token)
       if (!result.ok) throw refused('RESTORE_CONFLICT', result.message ?? 'Contact could not be restored')
       session.trashTokens.delete(input.token)
       if (!result.restoredPath) throw Object.assign(new Error('Contact restore returned no path'), { code: 'RESTORE_CONFLICT' })
       return { ok: true as const, restoredPath: result.restoredPath }
     }
   }
-  // A failure before any vault mutation was attempted (a malformed card, cancellation, a refused read) left nothing
+  // A failure before any realm mutation was attempted (a malformed card, cancellation, a refused read) left nothing
   // applied; once one was attempted only an explicit refusal is not-applied and anything else stays uncertain.
   return Object.fromEntries(Object.entries(methods).map(([name, run]) => [name, async (raw: unknown) => {
     try { return await run(raw) } catch (cause) {

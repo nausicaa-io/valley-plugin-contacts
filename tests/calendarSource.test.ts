@@ -6,7 +6,7 @@ import { disposeStore, getStore } from '../src/store'
 import { birthdayItems, registerBirthdaySource } from '../src/calendarSource'
 import { registerContactDetails } from '../src/contactView'
 import { WORKSPACE_DETAILS_V1 } from '@valley/plugin-sdk'
-import { cardAt, cardVault, contactAt, fileEntry } from './cards'
+import { cardAt, cardRealm, contactAt, fileEntry } from './cards'
 
 let off: (() => void) | undefined
 afterEach(async () => {
@@ -51,7 +51,7 @@ describe('birthdayItems', () => {
 
 describe('registerBirthdaySource range edges', () => {
   it('returns a valid page for a range that starts at year 0001', async () => {
-    const mock = createMockValleyApi({ manifest: { id: 'contacts' }, settings: { contactsRoot: 'Meadow/Orbit' }, ...cardVault({ 'Meadow/Orbit/Moss.vcf': { firstName: 'Moss', birthdate: '--12-31' } }) })
+    const mock = createMockValleyApi({ manifest: { id: 'contacts' }, settings: { contactsRoot: 'Meadow/Orbit' }, ...cardRealm({ 'Meadow/Orbit/Moss.vcf': { firstName: 'Moss', birthdate: '--12-31' } }) })
     initRuntime(mock.api)
     off = registerBirthdaySource(mock.api)
     await getStore(mock.api).ready()
@@ -68,7 +68,7 @@ describe('registerBirthdaySource range edges', () => {
 describe('registerBirthdaySource', () => {
   it('pages birthdays with range-bound cursors and republishes its revision on changes', async () => {
     const cards = Object.fromEntries(Array.from({ length: 5 }, (_, index) => [`Meadow/Orbit/P${index}.vcf`, { firstName: `P${index}`, birthdate: `1990-0${index + 1}-10` }]))
-    const mock = createMockValleyApi({ manifest: { id: 'contacts' }, settings: { contactsRoot: 'Meadow/Orbit' }, ...cardVault(cards) })
+    const mock = createMockValleyApi({ manifest: { id: 'contacts' }, settings: { contactsRoot: 'Meadow/Orbit' }, ...cardRealm(cards) })
     initRuntime(mock.api)
     off = registerBirthdaySource(mock.api)
     await getStore(mock.api).ready()
@@ -85,7 +85,7 @@ describe('registerBirthdaySource', () => {
     expect(third.cursor).toBeUndefined()
     const revision = mock.api.interop.state.get(CALENDAR_ITEM_SOURCE_REVISION_V1)!
     const content = cardAt('Meadow/Orbit/P0.vcf', { firstName: 'P0', birthdate: '1990-03-03' })
-    await mock.api.vault.writeFile('Meadow/Orbit/P0.vcf', content)
+    await mock.api.realm.writeFile('Meadow/Orbit/P0.vcf', content)
     mock.emitState({ indexEntries: mock.api.getState().indexEntries.map((entry) => entry.relPath === 'Meadow/Orbit/P0.vcf' ? fileEntry(entry.relPath, content, 9) : entry) })
     await expect.poll(() => mock.api.interop.state.get(CALENDAR_ITEM_SOURCE_REVISION_V1)).toBeGreaterThan(revision)
     expect((await source.invoke('list', [{ startDate: '2026-01-01', endDate: '2026-12-31', limit: 2, cursor: first.cursor }])).ok).toBe(false)

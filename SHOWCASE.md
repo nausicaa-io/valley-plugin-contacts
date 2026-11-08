@@ -1,6 +1,6 @@
 # Contacts
 
-An address book made of plain vCard files in your vault. Rich contact cards with covers, coloured groups, typed relations and birthdays that show up in Calendar.
+An address book made of plain vCard files in your realm. Rich contact cards with covers, coloured groups, typed relations and birthdays that show up in Calendar.
 
 ![A contact card with cover, groups, relations and contact details](gallery/dark/card.png)
 
@@ -9,7 +9,7 @@ An address book made of plain vCard files in your vault. Rich contact cards with
 Each contact card brings together phone numbers, email addresses, postal addresses, websites, social profiles, organisation and role, a birthday with age, and Markdown notes. Phone numbers, emails, addresses and links are clickable.
 
 - **Relations.** Link people as family, partner, friend, school, work and more. Relations stay intact when files are renamed.
-- **Covers.** Give a contact a cover image from your vault.
+- **Covers.** Give a contact a cover image from your realm.
 - **Editing.** Press Command-E to switch between reading and a full structured editor.
 
 ## Groups with colours

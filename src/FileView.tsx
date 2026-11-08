@@ -10,7 +10,7 @@ import { uiText } from './localization'
 /**
  * The contact a `.vcf` path holds: the live list's entry when the file is in the
  * contacts folder, else the card read straight from the file (and re-read when
- * it changes), so any `.vcf` in the vault can be viewed and edited.
+ * it changes), so any `.vcf` in the realm can be viewed and edited.
  */
 export function useContactFile(path: string): { contact: Contact | null; loaded: boolean } {
   const snap = useContacts(api)
@@ -20,13 +20,13 @@ export function useContactFile(path: string): { contact: Contact | null; loaded:
     if (listed) return
     let disposed = false
     const read = (): void => {
-      void api.vault.readFile(path).then((raw) => {
+      void api.realm.readFile(path).then((raw) => {
         if (disposed) return
         try { setDirect({ path, contact: parseContactFile(path, raw) }) } catch { setDirect({ path, contact: null }) }
       })
     }
     read()
-    const off = api.vault.onChanged((info) => { if (info.full || info.changes.some((change) => change.relPath === path)) read() })
+    const off = api.realm.onChanged((info) => { if (info.full || info.changes.some((change) => change.relPath === path)) read() })
     return () => { disposed = true; off() }
   }, [path, Boolean(listed)])
   if (listed) return { contact: listed, loaded: true }

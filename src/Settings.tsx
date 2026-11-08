@@ -45,7 +45,7 @@ function ConfirmRemoveButton({ onDelete, label }: { onDelete: () => void; label:
 export function Settings(): ReactElement {
   useContactIcons()
   const initial = getSettings()
-  const { Button, TextField, VaultFolderField, useReorderDrag } = api.ui.settings
+  const { Button, TextField, RealmFolderField, useReorderDrag } = api.ui.settings
   const [contactsRoot, setContactsRoot] = React.useState(initial.contactsRoot)
   const [socials, setSocials] = React.useState<SocialLink[]>(initial.socials)
   const [newSocialLabel, setNewSocialLabel] = React.useState('')
@@ -95,7 +95,7 @@ export function Settings(): ReactElement {
     <section className="settings-section">
       <h4 className="settings-label">{uiText('auto.b0dd615cbbdc')}</h4>
       <api.ui.settings.Row title={uiText('auto.ecea12d8f363')} description={uiText('contacts.settings.rootDescription')}>
-        <VaultFolderField
+        <RealmFolderField
           value={contactsRoot}
           onChange={setContactsRoot}
           onCommit={(value) => void api.settings.set('contactsRoot', value)}

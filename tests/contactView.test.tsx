@@ -7,12 +7,12 @@ import { initRuntime } from '../src/runtime'
 import { ContactFileView } from '../src/FileView'
 import { registerContactDetails } from '../src/contactView'
 import { disposeStore, getStore } from '../src/store'
-import { cardVault } from './cards'
+import { cardRealm } from './cards'
 
 const path = 'Elsewhere/Fern.vcf'
 function setup() {
   const mock = createMockValleyApi({ manifest: { id: 'contacts' }, settings: { contactsRoot: 'Plants' },
-    ...cardVault({ [path]: { firstName: 'Fern', groups: ['Friends'], email: [{ value: 'fern@example.test' }], phone: [{ value: '+41 123' }], birthdate: '--06-21', note: 'Original' } }) })
+    ...cardRealm({ [path]: { firstName: 'Fern', groups: ['Friends'], email: [{ value: 'fern@example.test' }], phone: [{ value: '+41 123' }], birthdate: '--06-21', note: 'Original' } }) })
   vi.spyOn(mock.api, 'getState').mockReturnValue({ ...mock.api.getState(), activePath: path })
   initRuntime(mock.api)
   registerContactDetails(mock.api)
@@ -34,11 +34,11 @@ describe('contact reader and full editor', () => {
     const notes = view.container.querySelectorAll('textarea.ct-notes-editor')
     fireEvent.change(notes[0], { target: { value: 'Shared mounted fern draft' } })
     expect(notes[1]).toHaveValue('Shared mounted fern draft')
-    await expect(mock.api.vault.writeFile(path, 'Overwrite')).rejects.toMatchObject({ code: 'DIRTY_EDITOR' })
-    await waitFor(async () => expect(await mock.api.vault.readFile(path)).toContain('NOTE:Shared mounted fern draft'), { timeout: 2000 })
-    expect(mock.api.vault.editors.save).toHaveBeenCalledWith(first, expect.stringContaining('NOTE:Shared mounted fern draft'), expect.any(Object), expect.any(String))
+    await expect(mock.api.realm.writeFile(path, 'Overwrite')).rejects.toMatchObject({ code: 'DIRTY_EDITOR' })
+    await waitFor(async () => expect(await mock.api.realm.readFile(path)).toContain('NOTE:Shared mounted fern draft'), { timeout: 2000 })
+    expect(mock.api.realm.editors.save).toHaveBeenCalledWith(first, expect.stringContaining('NOTE:Shared mounted fern draft'), expect.any(Object), expect.any(String))
     view.rerender(<><ContactFileView relPath={path} mountedView={{ ...first }} /><ContactFileView relPath={path} mountedView={{ ...second }} /></>)
-    expect(mock.api.vault.editors.register).toHaveBeenCalledTimes(2)
+    expect(mock.api.realm.editors.register).toHaveBeenCalledTimes(2)
   })
 
   it('toggles with Command-E and saves pending edits after returning to Reading', async () => {
@@ -52,8 +52,8 @@ describe('contact reader and full editor', () => {
     fireEvent.change(notes, { target: { value: 'Edited in the full contact form' } })
     fireEvent.keyDown(window, { key: 'e', metaKey: true })
     expect(container.querySelector('.ct-form')!.parentElement).toHaveAttribute('hidden')
-    await waitFor(() => expect(mock.api.vault.editors.saveDocument).toHaveBeenCalled(), { timeout: 2000 })
-    expect(vi.mocked(mock.api.vault.editors.saveDocument).mock.calls.at(-1)?.[2]).toContain('Edited in the full contact form')
+    await waitFor(() => expect(mock.api.realm.editors.saveDocument).toHaveBeenCalled(), { timeout: 2000 })
+    expect(vi.mocked(mock.api.realm.editors.saveDocument).mock.calls.at(-1)?.[2]).toContain('Edited in the full contact form')
     expect(details.getSnapshot({ filePath: path, selectedItemIds: ['view'] }).items.view.value).toBe('reading')
   })
 

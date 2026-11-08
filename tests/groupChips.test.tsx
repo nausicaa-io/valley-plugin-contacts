@@ -14,7 +14,7 @@ import { registerContactSurfaces, setContactSurfaceActions } from '../src/surfac
 import { registerContactsCommands } from '../src/commands'
 import { formatContactBirthdate, parseContactDateInput } from '../src/util'
 import type { Contact } from '../src/types'
-import { cardVault, contactAt } from './cards'
+import { cardRealm, contactAt } from './cards'
 
 function setup(
   groups: string[],
@@ -25,7 +25,7 @@ function setup(
   const contact = contactAt('Plants/Fern Canopy.vcf', fields)
   const mock = createMockValleyApi({
     manifest: { id: 'contacts' },
-    vault: { path: '/mock/vault', name: 'mock', displayName: 'mock' },
+    realm: { path: '/mock/realm', name: 'mock', displayName: 'mock' },
     groups: [
       { id: 'fungi', name: 'fungi', color: '#a855f7' },
       { id: 'plants', name: 'plants', color: '#eab308' }
@@ -34,7 +34,7 @@ function setup(
       contactsRoot: 'Plants',
       lastOpen: { selectedPath: contact.relPath, mode: 'detail' }
     },
-    ...cardVault({ [contact.relPath]: fields })
+    ...cardRealm({ [contact.relPath]: fields })
   })
   initRuntime(mock.api)
   registerContactSurfaces(mock.api)
@@ -43,7 +43,7 @@ function setup(
 }
 
 function lastSavedContent(mock: ReturnType<typeof createMockValleyApi>): string {
-  return vi.mocked(mock.api.vault.editors.saveDocument).mock.calls.at(-1)?.[2] ?? vi.mocked(mock.api.vault.writeTextDocumentGuarded).mock.calls.at(-1)?.[1] ?? ''
+  return vi.mocked(mock.api.realm.editors.saveDocument).mock.calls.at(-1)?.[2] ?? vi.mocked(mock.api.realm.writeTextDocumentGuarded).mock.calls.at(-1)?.[1] ?? ''
 }
 
 function setupPanelContacts(): ReturnType<typeof createMockValleyApi> {
@@ -55,7 +55,7 @@ function setupPanelContacts(): ReturnType<typeof createMockValleyApi> {
       { id: 'plants', name: 'plants', color: '#eab308' }
     ],
     settings: { contactsRoot: 'Meadow/Orbit' },
-    ...cardVault({
+    ...cardRealm({
       'Meadow/Orbit/Chanterelle.vcf': { firstName: 'Chanterelle', groups: ['fungi'] },
       'Meadow/Orbit/Otter.vcf': { firstName: 'Otter', groups: ['plants'] },
       'Meadow/Orbit/Badger.vcf': { firstName: 'Badger', groups: [] }
@@ -149,7 +149,7 @@ describe('DetailView group chips', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Alpine Habitat Field Station' }))
 
       await waitFor(() => expect(mock.api.links.open).toHaveBeenCalledWith({ category: 'location', value: 'Alpine Habitat Field Station' }))
-      expect(mock.api.vault.writeTextDocumentGuarded).not.toHaveBeenCalled()
+      expect(mock.api.realm.writeTextDocumentGuarded).not.toHaveBeenCalled()
       expect(mock.datasets.has('map.places')).toBe(false)
     } finally {
       warn.mockRestore()
@@ -221,7 +221,7 @@ describe('Page ⋯ actions menu', () => {
     await menuItem(mock, 'copy-link').onSelect?.()
     expect(clipboard.mock.calls.flat()).toEqual([
       contact.relPath,
-      `/mock/vault/${contact.relPath}`,
+      `/mock/realm/${contact.relPath}`,
       `valley://open?file=${encodeURIComponent(contact.relPath)}`
     ])
   })
@@ -234,17 +234,17 @@ describe('Page ⋯ actions menu', () => {
 
     await act(async () => menuItem(mock, 'trash').onSelect?.())
     await waitFor(() => expect(mock.confirmations).toHaveLength(1))
-    expect(mock.api.vault.trashTextDocumentGuarded).not.toHaveBeenCalled()
+    expect(mock.api.realm.trashTextDocumentGuarded).not.toHaveBeenCalled()
 
     vi.mocked(mock.api.ui.confirm).mockResolvedValueOnce('delete')
     await act(async () => menuItem(mock, 'trash').onSelect?.())
 
     await waitFor(() => {
-      expect(mock.api.vault.trashTextDocumentGuarded).toHaveBeenCalledWith(contact.relPath, expect.any(String))
+      expect(mock.api.realm.trashTextDocumentGuarded).toHaveBeenCalledWith(contact.relPath, expect.any(String))
     })
     expect(mock.busUndo).toHaveLength(1)
     await mock.busUndo[0].undo()
-    expect(await mock.api.vault.readFile(contact.relPath)).toContain('Original note')
+    expect(await mock.api.realm.readFile(contact.relPath)).toContain('Original note')
   })
 
   it('keeps a dirty contact and shows the guarded deletion refusal', async () => {
@@ -253,10 +253,10 @@ describe('Page ⋯ actions menu', () => {
     void mock.api.settings.set('lastOpen', { selectedPath: contact.relPath, mode: 'detail' })
     await act(async () => render(React.createElement(Page, { navigation: { setController: vi.fn() } })))
     vi.mocked(mock.api.ui.confirm).mockResolvedValueOnce('delete')
-    vi.mocked(mock.api.vault.trashTextDocumentGuarded).mockResolvedValueOnce({ ok: false, reason: 'stale' })
+    vi.mocked(mock.api.realm.trashTextDocumentGuarded).mockResolvedValueOnce({ ok: false, reason: 'stale' })
     await act(async () => menuItem(mock, 'trash').onSelect?.())
     expect(await screen.findByRole('alert')).toHaveTextContent('contains unsaved text')
-    expect(await mock.api.vault.readFile(contact.relPath)).not.toBe('')
+    expect(await mock.api.realm.readFile(contact.relPath)).not.toBe('')
   })
 })
 
@@ -376,15 +376,15 @@ describe('Contact form document revisions', () => {
   it('completes an exact own-save before renaming a filename-only contact draft', async () => {
     const { mock, contact } = setup([])
     await getStore(mock.api).ready()
-    const before = await mock.api.vault.readFile(contact.relPath)
+    const before = await mock.api.realm.readFile(contact.relPath)
     const controlRef = React.createRef<ContactFormHandle>()
     const view = render(<ContactForm contact={contact} controlRef={controlRef} />)
     await screen.findByDisplayValue('Original note')
     fireEvent.change(view.container.querySelector('.ct-file-name input')!, { target: { value: 'Canopy card' } })
     await act(async () => { await controlRef.current!.save() })
-    expect(mock.api.vault.editors.saveDocument).toHaveBeenCalledWith(contact.relPath, expect.any(String), before, expect.any(Object), expect.any(String))
-    expect(await mock.api.vault.readFile('Plants/Canopy card.vcf')).toBe(before)
-    expect(await mock.api.vault.stat(contact.relPath)).toBeNull()
+    expect(mock.api.realm.editors.saveDocument).toHaveBeenCalledWith(contact.relPath, expect.any(String), before, expect.any(Object), expect.any(String))
+    expect(await mock.api.realm.readFile('Plants/Canopy card.vcf')).toBe(before)
+    expect(await mock.api.realm.stat(contact.relPath)).toBeNull()
   })
 
   it('freezes shared logical contact forms and saves through the canonical draft owner from either copy', async () => {
@@ -393,7 +393,7 @@ describe('Contact form document revisions', () => {
     const first = React.createRef<ContactFormHandle>(), second = React.createRef<ContactFormHandle>()
     const view = render(<><ContactForm contact={contact} controlRef={first} /><ContactForm contact={contact} controlRef={second} /></>)
     await waitFor(() => expect(screen.getAllByDisplayValue('Original note')).toHaveLength(2))
-    const registrations = vi.mocked(mock.api.vault.editors.registerDocument).mock.calls
+    const registrations = vi.mocked(mock.api.realm.editors.registerDocument).mock.calls
     expect(registrations).toHaveLength(2)
     await waitFor(() => registrations.forEach(([, , provider]) => expect(provider.getSnapshot()).toMatchObject({ dirty: false, readiness: 'ready' })))
     let lease!: Awaited<ReturnType<typeof mock.prepareFileEditors>>
@@ -408,49 +408,49 @@ describe('Contact form document revisions', () => {
     expect(registrations.map(([, , provider]) => provider.getSnapshot())).toEqual([expect.objectContaining({ dirty: true }), expect.objectContaining({ dirty: false })])
     await expect(mock.api.drivers.files.writeFile(contact.relPath, 'Overwrite')).rejects.toMatchObject({ code: 'DIRTY_EDITOR' })
     await act(async () => { await second.current!.save() })
-    expect(mock.api.vault.editors.saveDocument).toHaveBeenCalledWith(contact.relPath, registrations[0][1], expect.stringContaining('NOTE:Shared fern draft'), expect.any(Object), expect.any(String))
-    expect(await mock.api.vault.readFile(contact.relPath)).toContain('NOTE:Shared fern draft')
+    expect(mock.api.realm.editors.saveDocument).toHaveBeenCalledWith(contact.relPath, registrations[0][1], expect.stringContaining('NOTE:Shared fern draft'), expect.any(Object), expect.any(String))
+    expect(await mock.api.realm.readFile(contact.relPath)).toContain('NOTE:Shared fern draft')
   })
 
   it('loads editor-owned fields and refuses a direct SDK overwrite of its dirty draft', async () => {
     const { mock, contact } = setup([])
     await getStore(mock.api).ready()
     const draft = buildContactFile({ ...contact, profession: 'Field botanist', note: 'Unsaved observation' })
-    await mock.api.vault.writeFile(contact.relPath, draft)
+    await mock.api.realm.writeFile(contact.relPath, draft)
     const controlRef = React.createRef<ContactFormHandle>()
     render(<ContactForm contact={contact} controlRef={controlRef} />)
     await screen.findByDisplayValue('Field botanist')
     const profession = screen.getByDisplayValue('Field botanist')
     fireEvent.change(profession, { target: { value: 'Mycologist' } })
-    await expect(mock.api.vault.writeFile(contact.relPath, `${draft}Newer typing\n`)).rejects.toMatchObject({ code: 'DIRTY_EDITOR' })
-    expect(await mock.api.vault.readFile(contact.relPath)).toBe(draft)
+    await expect(mock.api.realm.writeFile(contact.relPath, `${draft}Newer typing\n`)).rejects.toMatchObject({ code: 'DIRTY_EDITOR' })
+    expect(await mock.api.realm.readFile(contact.relPath)).toBe(draft)
     await act(async () => controlRef.current!.save())
-    expect(mock.api.vault.editors.saveDocument).toHaveBeenCalled()
+    expect(mock.api.realm.editors.saveDocument).toHaveBeenCalled()
     expect(screen.getByDisplayValue('Mycologist')).toBeTruthy()
-    expect(await mock.api.vault.readFile(contact.relPath)).toContain('ROLE:Mycologist')
+    expect(await mock.api.realm.readFile(contact.relPath)).toContain('ROLE:Mycologist')
   })
 
   it('does not enable saving after an unreadable document', async () => {
     const { mock, contact } = setup([])
     await getStore(mock.api).ready()
-    vi.spyOn(mock.api.vault, 'readTextDocument').mockRejectedValue(new Error('Read failed'))
+    vi.spyOn(mock.api.realm, 'readTextDocument').mockRejectedValue(new Error('Read failed'))
     const state = vi.fn()
     const controlRef = React.createRef<ContactFormHandle>()
     render(<ContactForm contact={contact} controlRef={controlRef} onActionState={state} />)
-    await waitFor(() => expect(mock.api.vault.readTextDocument).toHaveBeenCalled())
+    await waitFor(() => expect(mock.api.realm.readTextDocument).toHaveBeenCalled())
     await act(async () => controlRef.current!.save())
     expect(state.mock.calls.at(-1)?.[0].canSave).toBe(false)
-    expect(mock.api.vault.writeTextDocumentGuarded).not.toHaveBeenCalled()
+    expect(mock.api.realm.writeTextDocumentGuarded).not.toHaveBeenCalled()
   })
 })
 
 it.each([false, true])('preserves form edits during initial document loading (remount=%s)', async remount => {
   const { mock, contact } = setup([])
   await getStore(mock.api).ready()
-  const read = mock.api.vault.readTextDocument
+  const read = mock.api.realm.readTextDocument
   let release!: () => void
   const held = new Promise<void>(resolve => { release = resolve })
-  vi.spyOn(mock.api.vault, 'readTextDocument').mockImplementationOnce(async path => { const snapshot = await read(path); await held; return snapshot })
+  vi.spyOn(mock.api.realm, 'readTextDocument').mockImplementationOnce(async path => { const snapshot = await read(path); await held; return snapshot })
   const controlRef = React.createRef<ContactFormHandle>()
   const view = render(<ContactForm contact={contact} controlRef={controlRef} />)
   try {
@@ -459,14 +459,14 @@ it.each([false, true])('preserves form edits during initial document loading (re
     await act(async () => { release(); await held })
     expect(screen.getByDisplayValue('Moss')).toBeTruthy()
     await act(async () => controlRef.current!.save())
-    await waitFor(() => expect(mock.api.vault.editors.saveDocument).toHaveBeenCalled())
+    await waitFor(() => expect(mock.api.realm.editors.saveDocument).toHaveBeenCalled())
     if (remount) {
       expect(screen.getByRole('alert')).toBeTruthy()
-      expect(await mock.api.vault.readFile(contact.relPath)).toContain('N:Canopy;Fern;;;')
-      expect(vi.mocked(mock.api.vault.editors.registerDocument).mock.calls.at(-1)![2].getSnapshot()).toMatchObject({ dirty: true })
+      expect(await mock.api.realm.readFile(contact.relPath)).toContain('N:Canopy;Fern;;;')
+      expect(vi.mocked(mock.api.realm.editors.registerDocument).mock.calls.at(-1)![2].getSnapshot()).toMatchObject({ dirty: true })
     } else {
-      await waitFor(async () => expect(await mock.api.vault.readFile('Plants/Moss Canopy.vcf')).toContain('N:Canopy;Moss;;;'))
-      expect(await mock.api.vault.stat(contact.relPath)).toBeNull()
+      await waitFor(async () => expect(await mock.api.realm.readFile('Plants/Moss Canopy.vcf')).toContain('N:Canopy;Moss;;;'))
+      expect(await mock.api.realm.stat(contact.relPath)).toBeNull()
     }
   } finally { release() }
 })
@@ -490,11 +490,11 @@ describe('Contact editor autosave', () => {
     render(<ContactForm contact={contact} autosave />)
     await screen.findByDisplayValue('Canopy')
     const newer = buildContactFile({ ...contact, profession: 'Changed elsewhere' })
-    await act(async () => { await mock.api.vault.writeFile(contact.relPath, newer) })
+    await act(async () => { await mock.api.realm.writeFile(contact.relPath, newer) })
     fireEvent.change(screen.getByDisplayValue('Canopy'), { target: { value: 'Draft' } })
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy(), { timeout: 3000 })
     expect(screen.getByDisplayValue('Draft')).toBeTruthy()
-    expect(await mock.api.vault.readFile(contact.relPath)).toBe(newer)
+    expect(await mock.api.realm.readFile(contact.relPath)).toBe(newer)
     fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
     expect(await screen.findByDisplayValue('Changed elsewhere')).toBeTruthy()
     expect(screen.getByDisplayValue('Canopy')).toBeTruthy()

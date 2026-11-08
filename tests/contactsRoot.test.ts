@@ -3,7 +3,7 @@ import { createMockValleyApi } from '@valley/plugin-testkit'
 import { getSettings, resolveContactCovers, resolveCoverPath } from '../src/data'
 import { initRuntime } from '../src/runtime'
 import { disposeStore, getStore, loadContacts } from '../src/store'
-import { cardVault, contactAt, fileEntry } from './cards'
+import { cardRealm, contactAt, fileEntry } from './cards'
 
 let installed = false
 afterEach(async () => { if (installed) await disposeStore() })
@@ -21,7 +21,7 @@ it('shares cover lookup while preserving exact paths, first filename matches, an
   ))
 })
 
-const VAULT = cardVault({
+const REALM = cardRealm({
   'Steve Wozniak.vcf': { firstName: 'Steve' },
   'Role - Design Partner.vcf': { firstName: 'Design' },
   'Meadow/Orbit/Moss.vcf': { firstName: 'Moss' },
@@ -34,7 +34,7 @@ const VAULT = cardVault({
 })
 
 async function install(contactsRoot: unknown): Promise<void> {
-  const mock = createMockValleyApi({ manifest: { id: 'contacts', indexState: 'scoped' }, settings: { contactsRoot }, indexEntries: VAULT.indexEntries, files: VAULT.files, templateFolder: 'Templates' })
+  const mock = createMockValleyApi({ manifest: { id: 'contacts', indexState: 'scoped' }, settings: { contactsRoot }, indexEntries: REALM.indexEntries, files: REALM.files, templateFolder: 'Templates' })
   initRuntime(mock.api)
   installed = true
   await getStore(mock.api).ready()
@@ -61,7 +61,7 @@ describe('contactsRoot scoping', () => {
     vi.restoreAllMocks()
   })
 
-  it('reads every card in the vault when the root is "/" or "."', async () => {
+  it('reads every card in the realm when the root is "/" or "."', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     for (const sentinel of ['/', '.']) {
       await install(sentinel)

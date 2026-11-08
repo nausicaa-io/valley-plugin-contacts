@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react'
 import type { MainWorkspaceViewProps, UiMenuItem } from '@valley/plugin-sdk'
-import { absoluteVaultPath, buildAppOpenUrl } from '@valley/plugin-sdk/paths'
+import { absoluteRealmPath, buildAppOpenUrl } from '@valley/plugin-sdk/paths'
 import { React, api } from './runtime'
 import { useContacts, getStore } from './store'
 import { ContactContent, setContactMode } from './contactView'
@@ -77,7 +77,7 @@ export function Page({ navigation }: MainWorkspaceViewProps): ReactElement {
     setDownloading(true)
     try {
       // The stored card is already the portable vCard.
-      await api.files.downloadFile(`${selected.fileName}.vcf`, await api.vault.readFile(selected.relPath))
+      await api.files.downloadFile(`${selected.fileName}.vcf`, await api.realm.readFile(selected.relPath))
     } finally {
       setDownloading(false)
     }
@@ -97,7 +97,7 @@ export function Page({ navigation }: MainWorkspaceViewProps): ReactElement {
         { id: 'reveal', label: api.files.revealLabel(), icon: <FolderOpen />, onSelect: () => api.files.revealInFinder(relPath) },
         { id: 'open-external', label: uiText('auto.713657474390'), icon: <ExternalLink />, onSelect: () => api.files.openWithDefaultApp(relPath) },
         { id: 'copy-relative', label: uiText('auto.75586047078a'), icon: <Copy />, onSelect: () => copyText(relPath) },
-        { id: 'copy-absolute', label: uiText('auto.b96d429c4495'), icon: <Copy />, onSelect: () => copyText(absoluteVaultPath(api.getState().vault?.path, relPath)) },
+        { id: 'copy-absolute', label: uiText('auto.b96d429c4495'), icon: <Copy />, onSelect: () => copyText(absoluteRealmPath(api.getState().realm?.path, relPath)) },
         { id: 'copy-link', label: uiText('auto.fb3a16f382f8'), icon: <Copy />, onSelect: () => copyText(buildAppOpenUrl(relPath)) },
         { type: 'separator' },
         { id: 'trash', label: uiText('auto.572a73d31855'), icon: <Trash />, danger: true, onSelect: () => void removeContact() }

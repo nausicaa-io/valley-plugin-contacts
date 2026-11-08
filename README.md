@@ -1,10 +1,10 @@
 # Contacts
 
-Address book over vCard files in your vault: ordered groups with colors, cover-aware structured contact cards, typed relations, birthdays in Calendar, and a force-directed relationship graph.
+Address book over vCard files in your realm: ordered groups with colors, cover-aware structured contact cards, typed relations, birthdays in Calendar, and a force-directed relationship graph.
 
 ## Contact files
 
-Each person is one `.vcf` file (vCard 4.0, RFC 6350) in the Contacts folder (setting `contactsRoot`, empty by default; an empty value or `/` scans the whole vault). Cards exported by other address books (vCard 2.1, 3.0 and 4.0) are read as they are. Opening a `.vcf` shows the contact. Command-E (Ctrl-E on Windows/Linux) switches between Reading and a full structured Editing view. Footer details offers the same mode switch and configurable name, groups, birthday, email, phone, organization, profession, nickname, address, and website fields. Contact editing stays in the main view; the right sidebar has no Contact editing tab. Edits autosave with guarded writes, and switching to Reading keeps pending saves alive.
+Each person is one `.vcf` file (vCard 4.0, RFC 6350) in the Contacts folder (setting `contactsRoot`, empty by default; an empty value or `/` scans the whole realm). Cards exported by other address books (vCard 2.1, 3.0 and 4.0) are read as they are. Opening a `.vcf` shows the contact. Command-E (Ctrl-E on Windows/Linux) switches between Reading and a full structured Editing view. Footer details offers the same mode switch and configurable name, groups, birthday, email, phone, organization, profession, nickname, address, and website fields. Contact editing stays in the main view; the right sidebar has no Contact editing tab. Edits autosave with guarded writes, and switching to Reading keeps pending saves alive.
 
 - Names, nickname, birthday (`BDAY`, with or without a year), groups (`CATEGORIES`), phone, email, addresses (`ADR` with `LABEL`), organizations (`ORG`/`TITLE`), profession (`ROLE`), websites, social profiles (`SOCIALPROFILE`) and Markdown notes (`NOTE`) use standard properties.
 - Relations are `RELATED` entries pointing at the other card's `UID`, so renaming a file never breaks them. Cover image, events and last contact use `X-VALLEY-*` properties.
@@ -15,7 +15,7 @@ Each person is one `.vcf` file (vCard 4.0, RFC 6350) in the Contacts folder (set
 
 This repository owns the plugin’s interface, behavior, dependencies, schemas, tests, translations, and compiled releases. It uses Valley manifest API 5 and the injected SDK 6.
 
-This is an external plugin and is not bundled with Valley. An installed copy lives in the vault's `.valley/plugins/packages/github/contacts/` (installed from GitHub) or `.valley/plugins/packages/local/contacts/` (installed from a local package). Core and external installations run with the same sandbox, permissions, and SDK/IPC contract. Ordinary vault documents and saved plugin data (`.valley/plugins/data/contacts/`) keep their existing locations.
+This is an external plugin and is not bundled with Valley. An installed copy lives in the realm's `.valley/plugins/packages/github/contacts/` (installed from GitHub) or `.valley/plugins/packages/local/contacts/` (installed from a local package). Core and external installations run with the same sandbox, permissions, and SDK/IPC contract. Ordinary realm documents and saved plugin data (`.valley/plugins/data/contacts/`) keep their existing locations.
 
 ## Search
 

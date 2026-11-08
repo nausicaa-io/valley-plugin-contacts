@@ -6,17 +6,17 @@ function createOwner(api: ValleyPluginApi, retired: Promise<void> | undefined, o
   // Contact cards plus images (covers resolve by file name). Card contents are
   // read by the loader, only for files whose size or modification time moved.
   const index = createIndexObserver(api, { extensions: [CONTACT_EXTENSION, ...IMAGE_EXTENSIONS], fields: ['mtimeMs', 'size'] })
-  const root = api.getState().vault?.path
+  const root = api.getState().realm?.path
   let active = true
   let revoked = false
   let disposal: Promise<void> | undefined
   let waiting: { promise: Promise<void>; resolve(): void; reject(error: Error): void } | undefined
   const assertCurrent = (): void => {
-    if (!active || revoked || api.getState().vault?.path !== root) throw new Error('Contacts index owner was revoked')
+    if (!active || revoked || api.getState().realm?.path !== root) throw new Error('Contacts index owner was revoked')
   }
   const rejectWaiting = (error: Error): void => { waiting?.reject(error); waiting = undefined }
-  const offVault = api.subscribeState(['vault'], ({ state }) => {
-    if (state.vault?.path === root) return
+  const offRealm = api.subscribeState(['realm'], ({ state }) => {
+    if (state.realm?.path === root) return
     revoked = true
     rejectWaiting(new Error('Contacts index owner was revoked'))
   })
@@ -53,7 +53,7 @@ function createOwner(api: ValleyPluginApi, retired: Promise<void> | undefined, o
     dispose(): Promise<void> {
       if (disposal) return disposal
       active = false
-      offVault(); offIndex()
+      offRealm(); offIndex()
       rejectWaiting(new Error('Contacts index owner was revoked'))
       disposal = (async () => {
         const results = await Promise.allSettled([index.dispose(), retired])

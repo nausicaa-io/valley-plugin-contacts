@@ -22,7 +22,7 @@ function link(id: string, label: string, url = ''): SocialLink {
 function setup(socials?: SocialLink[]): ReturnType<typeof createMockValleyApi> {
   const mock = createMockValleyApi({
     manifest: { id: 'contacts' },
-    vault: { path: '/mock/vault', name: 'mock', displayName: 'mock' },
+    realm: { path: '/mock/realm', name: 'mock', displayName: 'mock' },
     settings: socials ? { contactsRoot: 'Meadow/Orbit', socials } : { contactsRoot: 'Meadow/Orbit' }
   })
   initRuntime(mock.api)
