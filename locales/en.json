@@ -174,5 +174,7 @@
   "contacts.icons.invalid": "Could not load SVG icon",
   "contacts.search.notes": "Contact notes",
   "bookmark.view": "Contacts view",
-  "bookmark.item": "Selected item"
+  "bookmark.item": "Selected item",
+  "menu.newContact": "New Contact",
+  "menu.relationshipGraph": "Relationship Graph"
 }

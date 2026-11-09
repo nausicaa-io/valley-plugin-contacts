@@ -520,6 +520,7 @@ export function registerContactsCommands(api: ValleyPluginApi): () => void {
 
     register({
       id: 'open-page',
+      menu: false,
       label: 'Open Contacts page', labelKey: 'auto.da942ff2c46a',
       sideEffect: 'read',
       run: () => {
@@ -531,6 +532,7 @@ export function registerContactsCommands(api: ValleyPluginApi): () => void {
 
     register({
       id: 'open-graph',
+      menu: { group: 'view', order: 20, label: 'Relationship Graph', labelKey: 'menu.relationshipGraph' },
       label: 'Open contact relationship graph', labelKey: 'auto.2f6a1a48144f',
       sideEffect: 'read',
       run: () => {
@@ -566,6 +568,7 @@ export function registerContactsCommands(api: ValleyPluginApi): () => void {
 
     register({
       id: 'new-contact',
+      menu: { group: 'create', order: 10, label: 'New Contact', labelKey: 'menu.newContact' },
       label: 'New contact', labelKey: 'auto.f4101c50fadc',
       sideEffect: 'read',
       run: () => {

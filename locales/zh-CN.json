@@ -174,5 +174,7 @@
   "contacts.icons.invalid": "无法加载 SVG 图标",
   "contacts.search.notes": "联系人备注",
   "bookmark.view": "联系人视图",
-  "bookmark.item": "所选项目"
+  "bookmark.item": "所选项目",
+  "menu.newContact": "新建联系人",
+  "menu.relationshipGraph": "关系图"
 }
