@@ -36,7 +36,7 @@ it('provides exact-address matches, preserves ambiguous contacts and aliases, an
   await vi.waitFor(() => expect(mock.api.interop.state.get(CONTACTS_DIRECTORY_REVISION_V1)).toBeGreaterThan(before))
   expect(await provider.invoke('open', [entries[1].relPath])).toMatchObject({ ok: false })
   expect(await provider.invoke('open', [entries[0].relPath, { newTab: true }])).toMatchObject({ ok: true })
-  expect(mock.api.workspace.openMainTab).toHaveBeenLastCalledWith({ newTab: true })
+  expect(mock.api.workspace.openFile).toHaveBeenLastCalledWith(entries[0].relPath, undefined, { newTab: true })
   off(); off = undefined
   expect(await provider.invoke('search', ['Canopy', 10])).toMatchObject({ ok: false, error: { code: 'provider-unavailable' } })
 })

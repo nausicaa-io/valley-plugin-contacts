@@ -20,7 +20,6 @@ import {
   deleteContact,
   contactTrashWarning,
   filterByGroup,
-  getGlobalGroups,
   normalizeGroupName,
   relationLabel,
   relationTarget,
@@ -32,6 +31,7 @@ import { inferRelationType, parseContactFile } from './schema'
 import { searchHaystack } from './util'
 import { getStore, loadContacts } from './store'
 import { groupForName } from '@valley/plugin-sdk/groups'
+import { getAllContactGroups } from './groups'
 
 const contactsResult = {
   "type": "object",
@@ -944,8 +944,8 @@ export function registerContactsCommands(api: ValleyPluginApi): () => void {
       },
       run: async ({ name, group }) => {
         const current = requireContact(loadContacts(api), name)
-        const configured = groupForName(getGlobalGroups(api), group)
-        if (!configured) throw new Error(`Unknown group "${group}". Create it in Settings → Appearance → Groups first.`)
+        const configured = groupForName(getAllContactGroups(api), group)
+        if (!configured) throw new Error(`Unknown group "${group}". Create it in Settings → Contacts → Groups first.`)
         const { contact, restore } = await mutateContact(api, current.relPath, (c) =>
           c.groups.some((g) => normalizeGroupName(g) === normalizeGroupName(configured.name))
             ? c

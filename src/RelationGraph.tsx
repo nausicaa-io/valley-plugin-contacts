@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react'
 import { assetUrlForRelPath } from '@valley/plugin-sdk/fileTypes'
 import { readPaletteColor } from '@valley/plugin-sdk/palette'
-import { React } from './runtime'
+import { React, api } from './runtime'
 import type { Contact, ContactGroup, RelationType } from './types'
 import {
   RELATION_COLORS,
@@ -22,7 +22,7 @@ interface Props {
   groupConfigs: ContactGroup[]
   coverPaths: Record<string, string | null>
   focusPath: string | null
-  onOpen: (relPath: string) => void
+  onOpen: (relPath: string, newTab: boolean) => void
 }
 
 /** Force-directed relationship graph rendered on a canvas. */
@@ -230,9 +230,9 @@ export function RelationGraph({ contacts, groupConfigs, coverPaths, focusPath, o
     // its own — repaint this move.
     kickRef.current()
   }
-  const onPointerUp = (_e: React.PointerEvent<HTMLCanvasElement>): void => {
+  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>): void => {
     const drag = dragRef.current
-    if (drag.node && !drag.moved) onOpen(drag.node.id)
+    if (drag.node && !drag.moved) onOpen(drag.node.id, api.ui.hasModKey(e))
     dragRef.current = { node: null, moved: false, px: 0, py: 0 }
   }
   const onWheel = (e: React.WheelEvent<HTMLCanvasElement>): void => {

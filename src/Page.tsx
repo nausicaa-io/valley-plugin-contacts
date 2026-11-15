@@ -113,7 +113,7 @@ export function Page({ navigation }: MainWorkspaceViewProps): ReactElement {
         groupConfigs={snap.groupConfigs}
         coverPaths={snap.coverPaths}
         focusPath={snap.selectedPath}
-        onOpen={(p) => store.openContact(p)}
+        onOpen={(p, newTab) => store.openContact(p, { newTab })}
       />
     )
   } else if (snap.mode === 'create') {

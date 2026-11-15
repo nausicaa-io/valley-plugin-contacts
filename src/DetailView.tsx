@@ -11,6 +11,7 @@ import { formatContactBirthdate, initials } from './util'
 import { resolveSocial } from './social'
 import { Building, Cake, Link, Mail, MapPin, Phone, Plus, X } from './icons'
 import { uiText } from './localization'
+import { getContactGroups } from './groups'
 import type { LinkTarget, MountedPluginView } from '@valley/plugin-sdk'
 import type { TextDocumentRead } from '@valley/plugin-sdk/types'
 import { readContactDocument } from './data'
@@ -22,9 +23,9 @@ function ContactNotes({ contact }: { contact: Contact }): ReactElement {
   return <api.ui.MarkdownView className="ct-notes-read" value={contact.note} context={{ sourcePath: contact.relPath }} />
 }
 
-/** Cover image, else the card's embedded photo, else nothing (initials show). */
+/** The card's embedded photo, else its cover image, else nothing (initials show). */
 export function avatarSource(contact: Contact, coverPath: string | null | undefined): string {
-  return coverPath ? assetUrlForRelPath(coverPath) : contact.photo
+  return contact.photo || (coverPath ? assetUrlForRelPath(coverPath) : '')
 }
 
 /** Read-only structured view of a contact, with inline group chips. */
@@ -41,7 +42,6 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
   const saveSeqRef = React.useRef(0)
   const contactGroupsKey = JSON.stringify(contact.groups)
   const avatar = avatarSource(contact, snap.coverPaths[contact.relPath])
-  const avatarAccent = paletteCssValue(groupColorFor(groups[0], snap.groupConfigs))
   const dateFormat = api.getState().dateFormat
   const socialLinks = getSocialLinks()
   const [documentRevision, setDocumentRevision] = React.useState<TextDocumentRead | null>(null)
@@ -123,7 +123,7 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
   }
 
   const currentGroups = new Set(groups.map((g) => normalizeGroupName(g)))
-  const knownGroups = allGroups(snap.groupConfigs)
+  const knownGroups = allGroups(getContactGroups(api))
     .filter((g) => !currentGroups.has(normalizeGroupName(g)))
   const groupQuery = normalizeGroupName(chipValue)
   const suggestedGroups = knownGroups
@@ -146,7 +146,7 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
         const opened = await api.links.open(action.kind === 'address' ? { category: 'location', value } : action.kind === 'phone' ? { category: 'phone', value } : action.kind === 'email' ? { category: 'email', value } : value)
         return { [CONFIRMED_LINK_OPEN]: opened?.status === 'opened' }
       },
-      settings: async (_action, context) => { await context.validate(); await api.workspace.openSettings('groups') }
+      settings: async (_action, context) => { await context.validate(); await api.workspace.openSettings('plugin:contacts#groups') }
     },
     targets: {
       'link-open': action => { const path = action.type === 'link-open' && action.kind === 'relation' ? relatedPath(action.index) : undefined; return path ? [{ kind: 'file', path, fileOperation: 'read' }] : [] }
@@ -183,7 +183,7 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
   return (
     <div className="ct-detail">
       <div className="ct-detail-head">
-        <span className="ct-detail-avatar" style={{ boxShadow: `0 0 0 3px ${avatarAccent}` }}>
+        <span className="ct-detail-avatar">
           {initials(contact.displayName)}
           {avatar && (
             <img
@@ -240,13 +240,13 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
                 onMouseDown={(event) => {
                   event.preventDefault()
                   closeAddGroup()
-                  api.workspace.openSettings('groups')
+                  api.workspace.openSettings('plugin:contacts#groups')
                 }}
                 role="option"
                 aria-selected={false}
               >
                 <Plus />
-                <span className="ct-chip-option-label">{uiText('contacts.settings.groups')}</span>
+                <span className="ct-chip-option-label">{uiText('contacts.settings.section.groups')}</span>
               </button>
             </span>
           </span>
@@ -266,7 +266,7 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
                 <span className="ct-rel-dot" style={{ background: RELATION_COLORS[rel.type] }} />
                 <span
                   className={`ct-rel-name${target ? '' : ' dead'}`}
-                  onClick={() => target && store.openContact(target)}
+                  onClick={(event) => target && store.openContact(target, { newTab: api.ui.hasModKey(event) })}
                 >
                   {name}
                 </span>

@@ -5,8 +5,10 @@ import { fileExtension, IMAGE_EXTENSIONS } from '@valley/plugin-sdk/fileTypes'
 import {
   canonicalGroupName,
   groupColorFor as sharedGroupColorFor,
-  normalizeGroups
+  groupFamilyKeys,
+  groupForName
 } from '@valley/plugin-sdk/groups'
+import { getAllContactGroups, getContactGroups } from './groups'
 import type { MountedPluginView, PluginIndexEntry } from '@valley/plugin-sdk'
 import { getContactIndex } from './indexOwner'
 import type { ValleyPluginApi } from '@valley/plugin-sdk'
@@ -24,8 +26,10 @@ export const DEFAULT_AVATAR_COLOR = '#8f969f'
 
 export interface ContactsSettings {
   contactsRoot: string
-  /** The one app-wide group registry. */
+  /** The groups Contacts offers: shared and Contacts-only, each while its switch is on. */
   groups: ContactGroup[]
+  /** Every shared and Contacts-only group, for a card's saved group colour. */
+  allGroups: ContactGroup[]
   socials: SocialLink[]
 }
 
@@ -62,19 +66,10 @@ export function getSettings(owner = api): ContactsSettings {
   const socials = normalizeSocialLinks(s.socials)
   return {
     contactsRoot: scoped,
-    groups: getGlobalGroups(owner),
+    groups: getContactGroups(owner),
+    allGroups: getAllContactGroups(owner),
     socials: socials.length ? socials : defaultSocialLinks()
   }
-}
-
-/**
- * The shared registry off core state. Coerced rather than cast: the field is
- * newer than the SDK contract that first shipped, so a host that predates it —
- * or hand-edited `preferences.json` — must read as an empty registry, not crash
- * the contacts list.
- */
-export function getGlobalGroups(owner = api): ContactGroup[] {
-  return normalizeGroups(owner.getState().groups)
 }
 
 /** The configured social platforms (falling back to the built-in defaults). */
@@ -208,10 +203,10 @@ export function createContactProjection(owner: ValleyPluginApi, readEntries = ()
       }
       return contacts
     },
-    groups: (contacts: Contact[], configured: ContactGroup[]) => {
-      const configKey = JSON.stringify(configured)
-      if (configKey !== groupsKey) { groupsKey = configKey; groupConfigs = configured }
-      const names = JSON.stringify(configured.map((group) => group.name))
+    groups: (contacts: Contact[], configured: ContactGroup[], all: ContactGroup[] = configured) => {
+      const configKey = JSON.stringify(all)
+      if (configKey !== groupsKey) { groupsKey = configKey; groupConfigs = all }
+      const names = JSON.stringify([configured.map((group) => group.name), all.length])
       const labels = JSON.stringify([uiText('contacts.group.all'), uiText('contacts.group.none')])
       if (contacts !== groupInput || names !== groupNamesKey || labels !== groupLabelsKey) {
         groupInput = contacts; groupNamesKey = names; groupLabelsKey = labels
@@ -222,7 +217,7 @@ export function createContactProjection(owner: ValleyPluginApi, readEntries = ()
           for (const name of contact.groups) counts.set(name, (counts.get(name) ?? 0) + 1)
         }
         const key = JSON.stringify([contacts.length, ungrouped, [...counts].sort(([a], [b]) => a.localeCompare(b)), names, labels])
-        if (key !== treeKey) { treeKey = key; groupTree = buildGroupTree(contacts, configured) }
+        if (key !== treeKey) { treeKey = key; groupTree = buildGroupTree(contacts, configured, all.filter((group) => !configured.some((offered) => offered.id === group.id))) }
       }
       return { groupConfigs, groupTree }
     },
@@ -243,8 +238,9 @@ export function createContactProjection(owner: ValleyPluginApi, readEntries = ()
   }
 }
 
-/** The virtual group tree: All, configured groups first, then other groups, then No group. */
-export function buildGroupTree(contacts: Contact[], configured: ContactGroup[] = []): GroupNode[] {
+/** The virtual group tree: All, configured groups first, then other groups, then No group. Groups of a switched-off kind (`excluded`) are not listed. */
+export function buildGroupTree(contacts: Contact[], configured: ContactGroup[] = [], excluded: readonly ContactGroup[] = []): GroupNode[] {
+  const excludedKeys = new Set(excluded.flatMap((group) => [group.name, ...(group.aliases ?? [])]).map(normalizeGroupName))
   const counts = new Map<string, number>()
   let uncategorized = 0
   for (const c of contacts) {
@@ -253,6 +249,7 @@ export function buildGroupTree(contacts: Contact[], configured: ContactGroup[] =
       continue
     }
     for (const raw of c.groups) {
+      if (excludedKeys.has(normalizeGroupName(raw))) continue
       const group = canonicalGroupName(raw, configured) ?? raw
       counts.set(group, (counts.get(group) ?? 0) + 1)
     }
@@ -262,7 +259,11 @@ export function buildGroupTree(contacts: Contact[], configured: ContactGroup[] =
     ...configured.map((group) => ({
       id: group.name,
       label: group.name,
-      count: counts.get(group.name) ?? 0
+      // A group with subgroups counts every contact in it or in one of them, once.
+      count: configured.some((candidate) => candidate.parent === group.id)
+        ? filterByGroup(contacts, group.name, configured).length
+        : counts.get(group.name) ?? 0,
+      ...(group.parent ? { sub: true } : {})
     })),
     ...[...counts.entries()]
       .filter(([name]) => !configuredKeys.has(normalizeGroupName(name)))
@@ -274,19 +275,28 @@ export function buildGroupTree(contacts: Contact[], configured: ContactGroup[] =
   return tree
 }
 
-/** Filter contacts to a group node id. */
-export function filterByGroup(contacts: Contact[], groupId: string): Contact[] {
-  if (groupId === ALL) return contacts
-  if (groupId === UNCATEGORIZED) return contacts.filter((c) => c.groups.length === 0)
-  return contacts.filter((contact) => contact.groups.some((name) => normalizeGroupName(name) === normalizeGroupName(groupId)))
+/** Every group name a group name covers: its own and, for a group with subgroups, theirs (with aliases). */
+function coveredGroupNames(name: string, configured: readonly ContactGroup[]): ReadonlySet<string> {
+  const group = groupForName(configured, name)
+  return group && !group.parent ? groupFamilyKeys(configured, group) : new Set([normalizeGroupName(name)])
 }
 
+/** Filter contacts to a group node id. A group covers its subgroups. */
+export function filterByGroup(contacts: Contact[], groupId: string, configured: readonly ContactGroup[] = getContactGroups()): Contact[] {
+  if (groupId === ALL) return contacts
+  if (groupId === UNCATEGORIZED) return contacts.filter((c) => c.groups.length === 0)
+  const covered = coveredGroupNames(groupId, configured)
+  return contacts.filter((contact) => contact.groups.some((name) => covered.has(normalizeGroupName(name))))
+}
+
+/** Hiding a group hides its subgroups with it. */
 export function filterByGroupVisibility(
   contacts: Contact[],
   hiddenGroups: string[],
-  hideUngrouped: boolean
+  hideUngrouped: boolean,
+  configured: readonly ContactGroup[] = getContactGroups()
 ): Contact[] {
-  const hidden = new Set(hiddenGroups.map(normalizeGroupName))
+  const hidden = new Set(hiddenGroups.flatMap((name) => [...coveredGroupNames(name, configured)]))
   return contacts.filter((contact) => contact.groups.length === 0
     ? !hideUngrouped
     : contact.groups.some((name) => !hidden.has(normalizeGroupName(name))))

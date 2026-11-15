@@ -47,6 +47,9 @@ export interface ContactGroup {
   id: string
   name: string
   color: string
+  aliases?: string[]
+  /** Id of the group this one is a subgroup of. */
+  parent?: string
 }
 
 /**
@@ -102,4 +105,6 @@ export interface GroupNode {
   id: string
   label: string
   count: number
+  /** A subgroup: lists indent it under its group. */
+  sub?: boolean
 }

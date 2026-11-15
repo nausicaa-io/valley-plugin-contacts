@@ -13,7 +13,8 @@
  * terminal CLI, and the assistant agent through the same typed catalog.
  */
 import { AGENT_TOOL_PROVIDER_V1, type ValleyPluginApi, type ValleyPluginModule } from '@valley/plugin-sdk'
-import { countGroupUsage } from '@valley/plugin-sdk/groups'
+import { countGroupUsage, groupKey } from '@valley/plugin-sdk/groups'
+import { getLocalGroups } from './groups'
 import { initRuntime } from './runtime'
 import { injectStyles } from './styles'
 import { getContactIndex } from './indexOwner'
@@ -41,13 +42,17 @@ export function register(api: ValleyPluginApi): () => Promise<void> {
   // Instantiate the window-anchored store now so the first render has data.
   const store = getStore(api)
 
-  // Tell the host which groups our contacts are in — a group is only deletable
-  // once nothing anywhere is in it. A contact in two groups counts in both.
+  // Tell the host which shared groups our contacts are in — a group is only
+  // deletable once nothing anywhere is in it. Contacts-only groups stay ours.
+  let lastUsage = ''
   const pushGroupUsage = (): void => {
     if (getContactIndex(api).getSnapshot().status !== 'ready') return
-    api.workspace.reportGroupUsage(
-      countGroupUsage(store.getSnapshot().contacts.flatMap((c) => c.groups))
-    )
+    const local = new Set(getLocalGroups(api).flatMap((group) => [group.name, ...(group.aliases ?? [])]).map(groupKey))
+    const usage = countGroupUsage(store.getSnapshot().contacts.flatMap((c) => c.groups).filter((name) => !local.has(groupKey(name))))
+    const key = JSON.stringify(usage)
+    if (key === lastUsage) return
+    lastUsage = key
+    api.workspace.reportGroupUsage(usage)
   }
   pushGroupUsage()
   const offGroupUsage = store.subscribe(pushGroupUsage)

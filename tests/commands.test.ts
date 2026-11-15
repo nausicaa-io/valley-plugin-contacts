@@ -469,7 +469,7 @@ describe('contacts:add-group / remove-group', () => {
       name: 'Otter Riverbank',
       group: 'unregistered'
     })
-    expect(result).toMatchObject({ ok: false, error: { message: expect.stringContaining('Settings → Appearance → Groups') } })
+    expect(result).toMatchObject({ ok: false, error: { message: expect.stringContaining('Settings → Contacts → Groups') } })
   })
 })
 

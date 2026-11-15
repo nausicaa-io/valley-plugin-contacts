@@ -143,6 +143,86 @@
         },
         "readOnly": true,
         "description": "Owner-managed runtime state; change it through the owning domain operation."
+      },
+      {
+        "key": "localGroups",
+        "label": "Contacts-only groups",
+        "labelKey": "contacts.settings.localGroups",
+        "type": "custom",
+        "settingsVisible": false,
+        "default": [],
+        "schema": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 60
+              },
+              "color": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "aliases": {
+                "type": "array",
+                "maxItems": 20,
+                "items": {
+                  "type": "string",
+                  "maxLength": 60
+                }
+              },
+              "parent": {
+                "type": "string",
+                "maxLength": 128
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "color"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      {
+        "key": "useSharedGroups",
+        "label": "Shared groups",
+        "labelKey": "contacts.settings.useSharedGroups",
+        "type": "custom",
+        "settingsVisible": false,
+        "schema": {
+          "type": "boolean"
+        },
+        "default": true
+      },
+      {
+        "key": "useLocalGroups",
+        "label": "Contacts-only groups",
+        "labelKey": "contacts.settings.useLocalGroups",
+        "type": "custom",
+        "settingsVisible": false,
+        "schema": {
+          "type": "boolean"
+        },
+        "default": true
+      },
+      {
+        "key": "showGroupsInList",
+        "label": "Show groups in the list",
+        "labelKey": "contacts.settings.showGroupsInList",
+        "type": "custom",
+        "settingsVisible": false,
+        "schema": {
+          "type": "boolean"
+        },
+        "default": true
       }
     ]
   },
@@ -6161,8 +6241,25 @@
   ],
   "permissions": {
     "storage": {
-      "realm": true
+      "realm": true,
+      "metadata": [
+        "assets/icons/contacts-icon"
+      ]
     },
     "largeData": true
-  }
+  },
+  "settingsSections": [
+    {
+      "id": "social",
+      "label": "Social platforms",
+      "labelKey": "contacts.settings.section.social",
+      "icon": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2218%22%20cy%3D%225%22%20r%3D%223%22%2F%3E%3Ccircle%20cx%3D%226%22%20cy%3D%2212%22%20r%3D%223%22%2F%3E%3Ccircle%20cx%3D%2218%22%20cy%3D%2219%22%20r%3D%223%22%2F%3E%3Cpath%20d%3D%22m8.6%2013.5%206.8%204M15.4%206.5l-6.8%204%22%2F%3E%3C%2Fsvg%3E"
+    },
+    {
+      "id": "groups",
+      "label": "Groups",
+      "labelKey": "contacts.settings.section.groups",
+      "icon": "group"
+    }
+  ]
 }

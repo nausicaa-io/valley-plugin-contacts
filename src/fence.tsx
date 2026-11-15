@@ -20,8 +20,6 @@ import type { FC } from 'react'
 import { assetUrlForRelPath } from '@valley/plugin-sdk/fileTypes'
 import { parseFenceParams } from '@valley/plugin-sdk/fenceParams'
 import { getStore } from './store'
-import { paletteCssValue } from '@valley/plugin-sdk/palette'
-import { groupColorFor } from './data'
 import type { Contact } from './types'
 import { uiText } from './localization'
 
@@ -113,15 +111,14 @@ const ContactsFence: FC<{ code: string }> = ({ code }) => {
   const contact = findContact(snap.contacts, target)
   if (!contact) return <div className="contacts-fence-empty">{uiText('auto.2d84548e6570')}{' '}{target}{' '}{uiText('auto.792c40464917')}</div>
 
-  const coverPath = snap.coverPaths[contact.relPath]
-  const accent = paletteCssValue(groupColorFor(contact.groups[0], snap.groupConfigs))
+  const photo = contact.photo || (snap.coverPaths[contact.relPath] ? assetUrlForRelPath(snap.coverPaths[contact.relPath]!) : '')
   const open = (): void => {
     store.openContact(contact.relPath)
     api.workspace.openMainTab()
   }
   const avatar = (
-    <span className="contacts-fence-avatar" style={{ boxShadow: `0 0 0 2px ${accent}` }}>
-      {coverPath ? <img src={assetUrlForRelPath(coverPath)} alt="" /> : initials(contact)}
+    <span className="contacts-fence-avatar">
+      {photo ? <img src={photo} alt="" /> : initials(contact)}
     </span>
   )
 

@@ -13,7 +13,10 @@ import { RELATION_LABELS } from './relationGraphModel'
 import { GripVertical, Plus, X } from './icons'
 import { canonicalPlatform, iconForPlatform, resolveSocial } from './social'
 import { getSocialLinks } from './data'
-import { dateFormatPlaceholder, formatContactDate, parseContactDateInput } from './util'
+import { dateFormatPlaceholder, formatContactDate, initials, parseContactDateInput } from './util'
+import { assetUrlForRelPath } from '@valley/plugin-sdk/fileTypes'
+import { PhotoField } from './PhotoEditor'
+import { getContactGroups } from './groups'
 import { uiText } from './localization'
 import { useContactFileActions, type ContactFileActionContext } from './fileViewCommands'
 
@@ -209,6 +212,7 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
   const [birthdate, setBirthdate] = useContactField(api, draftKey, 'birthdate', formatContactDate(base.birthdate, dateFormat), editorId)
   const [profession, setProfession] = useContactField(api, draftKey, 'profession', base.profession, editorId)
   const [cover, setCover] = useContactField(api, draftKey, 'cover', base.cover, editorId)
+  const [photo, setPhoto] = useContactField(api, draftKey, 'photo', base.photo, editorId)
   const [groups, setGroups] = useContactField(api, draftKey, 'groups', base.groups, editorId)
   const [groupDraft, setGroupDraft] = React.useState('')
   const [dragIndex, setDragIndex] = React.useState<number | null>(null)
@@ -227,7 +231,7 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
   const [saving, setSaving] = useContactField(api, draftKey, 'saving', false)
   const [fileName, setFileName] = useContactField(api, draftKey, 'fileName', '', editorId)
   const [fileNameEdited, setFileNameEdited] = useContactField(api, draftKey, 'fileNameEdited', false)
-  const knownGroups = allGroups(snap.groupConfigs).filter((g) => !groups.includes(g))
+  const knownGroups = allGroups(getContactGroups(api)).filter((g) => !groups.includes(g))
   // Social rows are ordered by hand — the detail view and the note's YAML both
   // keep that order, so it is the person's own ranking of where to reach them.
   const socialReorder = useReorderDrag<SocialRow>({
@@ -335,7 +339,9 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
       nickname: nickname.trim(),
       birthdate: parseContactDateInput(birthdate, dateFormat),
       profession: profession.trim(),
-      cover: cover.trim(),
+      // A new photo is embedded in the card and replaces a linked cover image.
+      photo,
+      cover: photo !== base.photo ? '' : cover.trim(),
       groups,
       phone: phone.filter((m) => m.value.trim()),
       email: email.filter((m) => m.value.trim()),
@@ -456,7 +462,7 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
       'social-platform': action => { if (action.type === 'social-platform') { requireDraft(); if (!social[action.index]) throw Object.assign(new Error('This exact Contact social row is missing.'), { outcome: 'not-applied' }); setSocial(replace(social, action.index, { ...social[action.index], value: { ...social[action.index].value, platform: action.value } })) } },
       flush: async (_action, context) => { requireDraft(); await save(context) },
       reload: () => { const draft = contactDraft(api, draftKey); if (draft.fences || saving || !draft.mounts.has(editorId) || draft.ownerMountId && draft.ownerMountId !== editorId) throw Object.assign(new Error('This exact Contact draft cannot be reloaded.'), { outcome: 'not-applied' }); reload() },
-      settings: async (_action, context) => { await context.validate(); await api.workspace.openSettings('groups') }
+      settings: async (_action, context) => { await context.validate(); await api.workspace.openSettings('plugin:contacts#groups') }
     }
   })
   React.useEffect(() => () => {
@@ -496,6 +502,12 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
         </p>
       )}
       {autosave && <div className="ct-form-status" aria-live="polite">{saving ? uiText('auto.56a2285c5b11') : revision !== savedRevision ? uiText('contacts.properties.pending') : ''}</div>}
+      <PhotoField
+        photo={photo}
+        fallback={photo !== base.photo ? '' : snap.coverPaths[contact?.relPath ?? ''] ? assetUrlForRelPath(snap.coverPaths[contact?.relPath ?? '']!) : ''}
+        initials={initials([firstName, lastName].filter(Boolean).join(' ') || nickname)}
+        onChange={setPhoto}
+      />
       <div className="ct-form-grid">
         <Field label={uiText('auto.7e568a90221d')}><input className="ct-input" value={firstName} onChange={(e) => setFirstName(val(e))} /></Field>
         <Field label={uiText('auto.adec36a821f8')}><input className="ct-input" value={lastName} onChange={(e) => setLastName(val(e))} /></Field>
@@ -503,9 +515,6 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
         <Field label={uiText('auto.ce2bd99c4758')}><input className="ct-input" value={nickname} onChange={(e) => setNickname(val(e))} /></Field>
         <Field label={uiText('auto.ab5815528f10')}><input className="ct-input" value={birthdate} placeholder={dateFormatPlaceholder(dateFormat)} onChange={(e) => setBirthdate(val(e))} /></Field>
         <Field label={uiText('auto.6f528041b7e1')}><input className="ct-input" value={profession} onChange={(e) => setProfession(val(e))} /></Field>
-        <Field label={uiText('auto.834fba1ea948')} full>
-          <input className="ct-input" value={cover} placeholder="portrait.jpg" onChange={(e) => setCover(val(e))} />
-        </Field>
         <Field label={uiText('auto.09979a78c995')} full>
           <div className="ct-file-name">
             <input
@@ -562,7 +571,7 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
                 allowCustom={false}
               />
               <button className="ct-rep-add" onClick={addGroup}><Plus /> {uiText('auto.2fca464f9c89')}</button>
-              <button className="ct-rep-add" onClick={() => api.workspace.openSettings('groups')}>
+              <button className="ct-rep-add" onClick={() => api.workspace.openSettings('plugin:contacts#groups')}>
                 {uiText('settings.section.groups')}
               </button>
             </div>
@@ -649,22 +658,51 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
         <button className="ct-rep-add" onClick={() => setWebsites([...websites, ''])}><Plus /> {uiText('auto.cb9082a114f4')}</button>
       </div>
 
-      <div className="ct-rep">
-        <div className="ct-form-section-title">{uiText('auto.70440046a3dc')}</div>
-        {valleyReady ? (
-          <api.ui.NoteInput
-            className="ct-notes-editor"
-            value={note}
-            onChange={setNote}
-            context={{ sourcePath: contact?.relPath || undefined }}
-            minHeight={120}
-            placeholder={uiText('contacts.notes.placeholder')}
-          />
-        ) : (
-          <div className="ct-notes-editor note-input-editor" />
-        )}
-      </div>
+      <ContactNotesField
+        valleyReady={valleyReady}
+        note={note}
+        sourcePath={contact?.relPath || undefined}
+        onChange={setNote}
+        onSave={() => { void saveRef.current() }}
+      />
 
+    </div>
+  )
+}
+
+/**
+ * The card's Markdown notes in the host note editor (syntax highlighting,
+ * `[[wikilink]]` completion, its own Source/Reading switch, vim mode), tall
+ * enough to write in and growing with its text. Mod-Enter saves.
+ */
+function ContactNotesField({ valleyReady, note, sourcePath, onChange, onSave }: {
+  valleyReady: boolean
+  note: string
+  sourcePath: string | undefined
+  onChange: (value: string) => void
+  onSave: () => void
+}): ReactElement {
+  const words = note.trim() ? note.trim().split(/\s+/).length : 0
+  return (
+    <div className="ct-rep ct-notes">
+      <div className="ct-form-section-title">{uiText('auto.70440046a3dc')}</div>
+      {valleyReady ? (
+        <runtimeApi.ui.NoteInput
+          className="ct-notes-editor"
+          value={note}
+          onChange={onChange}
+          onSave={onSave}
+          context={{ sourcePath }}
+          minHeight={180}
+          placeholder={uiText('contacts.notes.placeholder')}
+        />
+      ) : (
+        <div className="ct-notes-editor note-input-editor" style={{ minHeight: 180 }} />
+      )}
+      <div className="ct-notes-foot">
+        <span>{uiText('contacts.notes.hint')}</span>
+        <span>{uiText('contacts.notes.words', { count: words })}</span>
+      </div>
     </div>
   )
 }

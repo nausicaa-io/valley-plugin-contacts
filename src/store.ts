@@ -3,6 +3,7 @@ import { React, api as runtimeApi } from './runtime'
 import type { Contact, ContactGroup, GroupNode } from './types'
 import { getContactIndex } from './indexOwner'
 import { ALL, UNCATEGORIZED, createContactProjection, getSettings } from './data'
+import { onLocalGroupsShown } from './groups'
 
 /** Persisted "what was open" shape, saved invisibly under the `lastOpen` setting key. */
 interface LastOpen {
@@ -123,7 +124,7 @@ function createStore(api: ValleyPluginApi, onDispose: () => void): ContactsStore
   let realm = api.getState().realm?.path
   const settingsKey = (): string => {
     const settings = api.settings.get()
-    return JSON.stringify([settings.contactsRoot, settings.socials])
+    return JSON.stringify([settings.contactsRoot, settings.socials, settings.localGroups, settings.useSharedGroups, settings.useLocalGroups])
   }
   let lastSettingsKey = settingsKey()
   /** A rename the realm index has not applied yet (see `applyPendingRename`). */
@@ -226,7 +227,7 @@ function createStore(api: ValleyPluginApi, onDispose: () => void): ContactsStore
     // views never see a list with some contacts missing mid-refresh.
     if (!projection.settled()) return
     const contacts = applyPendingRename(projected)
-    const { groupTree, groupConfigs } = projection.groups(contacts, settings.groups)
+    const { groupTree, groupConfigs } = projection.groups(contacts, settings.groups, settings.allGroups)
     const coverPaths = projection.covers(contacts)
     // Drop selection if the contact disappeared (deleted/renamed). During the
     // first reloads, keep the saved selection until the scoped snapshot is
@@ -287,6 +288,7 @@ function createStore(api: ValleyPluginApi, onDispose: () => void): ContactsStore
     }, 30)
   }
   const offSettings = api.settings.subscribe(onSettingsChanged)
+  const offLocalGroups = onLocalGroupsShown(() => reload(true))
   /**
    * Follow a contact note that moved — our own rename, or one from the file tree.
    * `reload` keeps serving the entry under its new path until the realm index
@@ -323,6 +325,8 @@ function createStore(api: ValleyPluginApi, onDispose: () => void): ContactsStore
     setGroupFilter: (hiddenGroups, hideUngrouped) => set({ hiddenGroups, hideUngrouped }, { pushHistory: false }),
     openContact: (relPath, options) => {
       index.assertCurrent()
+      // A new tab shows the card through its own file view, so the page's selection and the other tabs stay as they are.
+      if (options?.newTab && options.reveal !== false) { api.workspace.openFile(relPath, undefined, { newTab: true }); return }
       // Only a path the index has not got yet needs holding (a fresh save/rename).
       if (!snap.contacts.some((c) => c.relPath === relPath)) expectPath(relPath)
       set({ selectedPath: relPath, mode: 'detail' }, { persist: options?.persist })
@@ -347,6 +351,7 @@ function createStore(api: ValleyPluginApi, onDispose: () => void): ContactsStore
       if (pendingTimer !== null) window.clearTimeout(pendingTimer)
       if (settingsTimer !== null) window.clearTimeout(settingsTimer)
       offSettings()
+      offLocalGroups()
       listeners.clear()
       projection.dispose()
       disposal = index.dispose()

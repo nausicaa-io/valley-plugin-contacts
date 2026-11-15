@@ -9,17 +9,18 @@ export function contactIconDefinitions() {
   return { CONTACT_ICON_SVGS: JSON.stringify(icons) }
 }
 
-export default () => ({
-  plugins: [{
-    name: 'contact-icons',
-    setup(build) {
-      build.onLoad({ filter: /[/\\]src[/\\]contactIcons\.tsx$/ }, ({ path }) => ({
-        contents: readFileSync(path, 'utf8').replace(
-          'declare const CONTACT_ICON_SVGS: Record<string, string>',
-          `const CONTACT_ICON_SVGS = ${contactIconDefinitions().CONTACT_ICON_SVGS}`
-        ),
-        loader: 'tsx'
-      }))
-    }
-  }]
-})
+const iconPlugin = {
+  name: 'contact-icons',
+  setup(build) {
+    build.onLoad({ filter: /[/\\]src[/\\]backend[/\\]icons\.ts$/ }, ({ path }) => ({
+      contents: readFileSync(path, 'utf8').replace(
+        'declare const CONTACT_ICON_SVGS: Record<string, string>',
+        `const CONTACT_ICON_SVGS = ${contactIconDefinitions().CONTACT_ICON_SVGS}`
+      ),
+      loader: 'ts'
+    }))
+  }
+}
+
+// The bundled icons are seeded by the backend into .valley/assets/icons/contacts-icon/.
+export default () => ({ backendOptions: { plugins: [iconPlugin] } })

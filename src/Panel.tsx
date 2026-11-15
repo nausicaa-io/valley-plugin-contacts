@@ -1,5 +1,4 @@
 import type { ReactElement } from 'react'
-import { assetUrlForRelPath } from '@valley/plugin-sdk/fileTypes'
 import { React, api } from './runtime'
 import { useContacts, getStore } from './store'
 import { paletteCssValue } from '@valley/plugin-sdk/palette'
@@ -7,7 +6,12 @@ import { ALL, UNCATEGORIZED, filterByGroupVisibility, groupColorFor } from './da
 import type { Contact, ContactGroup, GroupNode } from './types'
 import { GroupGlyph, Plus, Search, User } from './icons'
 import { contactSubtitle, initials, searchHaystack } from './util'
+import { avatarSource } from './DetailView'
 import { uiText } from './localization'
+import { useShowGroupsInList } from './groups'
+
+/** Group chips shown under a name; the rest fold into a +N chip. */
+const MAX_TAGS = 3
 
 function GroupFilterPopover({
   groups,
@@ -70,7 +74,7 @@ function GroupFilterPopover({
               <button
                 key={group.id}
                 type="button"
-                className={`ct-group-filter-option${selectionRunClass(activeRows[index], index)}`}
+                className={`ct-group-filter-option${group.sub ? ' ct-group-filter-sub' : ''}${selectionRunClass(activeRows[index], index)}`}
                 aria-pressed={selected}
                 onClick={() => commit(
                   selected ? [...localHidden, group.id] : localHidden.filter((id) => id !== group.id),
@@ -105,6 +109,7 @@ function GroupFilterPopover({
 
 export function Panel(): ReactElement {
   const snap = useContacts(api)
+  const showGroups = useShowGroupsInList()
   const store = getStore(api)
   const [query, setQuery] = React.useState('')
 
@@ -127,7 +132,7 @@ export function Panel(): ReactElement {
           onChange={(hidden, nextHideUngrouped) => store.setGroupFilter(hidden, nextHideUngrouped)}
           onOpenSettings={() => {
             close()
-            void api.workspace.openSettings('groups')
+            void api.workspace.openSettings('plugin:contacts#groups')
           }}
         />
       ),
@@ -137,20 +142,21 @@ export function Panel(): ReactElement {
   }
 
   const renderContact = (c: Contact): ReactElement => {
-    const coverPath = snap.coverPaths[c.relPath]
-    const groupColor = paletteCssValue(groupColorFor(c.groups[0], snap.groupConfigs))
+    const avatar = avatarSource(c, snap.coverPaths[c.relPath])
+    const subtitle = contactSubtitle(c)
     return (
       <button
         key={c.relPath}
         className={`ct-row${c.relPath === snap.selectedPath ? ' active' : ''}`}
-        onClick={() => store.openContact(c.relPath)}
+        onClick={(event) => store.openContact(c.relPath, { newTab: api.ui.hasModKey(event) })}
+        onAuxClick={(event) => { if (event.button === 1) store.openContact(c.relPath, { newTab: true }) }}
       >
-        <span className="ct-avatar" style={{ boxShadow: `0 0 0 2px ${groupColor}` }}>
+        <span className="ct-avatar">
           {initials(c.displayName) || <User />}
-          {coverPath && (
+          {avatar && (
             <img
               className="ct-avatar-img"
-              src={assetUrlForRelPath(coverPath)}
+              src={avatar}
               alt=""
               loading="lazy"
               onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
@@ -159,7 +165,15 @@ export function Panel(): ReactElement {
         </span>
         <span className="ct-row-meta">
           <span className="ct-row-name">{c.displayName}</span>
-          {contactSubtitle(c) && <span className="ct-row-sub">{contactSubtitle(c)}</span>}
+          {subtitle && <span className="ct-row-sub">{subtitle}</span>}
+          {showGroups && c.groups.length > 0 && (
+            <span className="ct-row-tags">
+              {c.groups.slice(0, MAX_TAGS).map((group) => (
+                <span key={group} className="ct-tag" title={group}><span>{group}</span></span>
+              ))}
+              {c.groups.length > MAX_TAGS && <span className="ct-tag ct-tag-more" title={c.groups.slice(MAX_TAGS).join(', ')}>+{c.groups.length - MAX_TAGS}</span>}
+            </span>
+          )}
         </span>
       </button>
     )

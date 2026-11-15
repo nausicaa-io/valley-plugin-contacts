@@ -10,6 +10,9 @@ import { canonicalPlatform, defaultSocialLinks, iconForPlatform, resolveSocial }
 import { contactIcon, refreshContactIcons, sanitizeContactSvg, hasContactIcon } from '../src/contactIcons'
 import { getSettings } from '../src/data'
 import type { SocialLink } from '../src/types'
+import { readContactIcons } from '../src/backend/icons'
+
+declare const CONTACT_ICON_SVGS: Record<string, string>
 
 const V1 = ['instagram', 'x', 'linkedin', 'snapchat', 'facebook', 'tiktok', 'youtube', 'github',
   'telegram', 'whatsapp', 'threads', 'reddit', 'discord', 'twitch', 'pinterest', 'spotify',
@@ -25,7 +28,15 @@ function setup(socials?: SocialLink[]): ReturnType<typeof createMockValleyApi> {
     realm: { path: '/mock/realm', name: 'mock', displayName: 'mock' },
     settings: socials ? { contactsRoot: 'Meadow/Orbit', socials } : { contactsRoot: 'Meadow/Orbit' }
   })
+  // The backend reads `.valley/assets/icons/contacts-icon/`; here it answers with the bundled set.
+  mock.api.backend.call = vi.fn(async () => ({ icons: CONTACT_ICON_SVGS })) as never
   initRuntime(mock.api)
+  return mock
+}
+
+async function setupWithIcons(socials?: SocialLink[]): Promise<ReturnType<typeof createMockValleyApi>> {
+  const mock = setup(socials)
+  await act(async () => refreshContactIcons(mock.api))
   return mock
 }
 
@@ -63,8 +74,8 @@ describe('social platform registry', () => {
     expect(resolveSocial({ platform: 'wechat', handle: 'fern' }, links).label).toBe('WeChat')
   })
 
-  it('matches SVG filenames and aliases and uses the generic icon for unknown names', () => {
-    setup()
+  it('matches SVG filenames and aliases and uses the generic icon for unknown names', async () => {
+    await setupWithIcons()
     expect(iconForPlatform(' Instagram ')).toBe(contactIcon('instagram'))
     expect(iconForPlatform('QQ Zone')).toBe(contactIcon('qq-zone'))
     expect(iconForPlatform('qqzone')).toBe(contactIcon('qq-zone'))
@@ -75,8 +86,8 @@ describe('social platform registry', () => {
     expect(container.querySelector('svg path')?.getAttribute('d')).toBeTruthy()
   })
 
-  it('uses a saved icon override and falls back to the name if its file is missing', () => {
-    setup()
+  it('uses a saved icon override and falls back to the name if its file is missing', async () => {
+    await setupWithIcons()
     const links = [{ ...link('custom', 'My platform'), icon: 'github' }]
     expect(resolveSocial({ platform: 'custom' }, links).icon).toBe(contactIcon('github'))
     expect(iconForPlatform('Instagram', 'missing')).toBe(contactIcon('instagram'))
@@ -85,9 +96,9 @@ describe('social platform registry', () => {
 })
 
 describe('social platform settings list', () => {
-  it('reorders the registry from the keyboard and writes the new order', () => {
-    const mock = setup([link('instagram', 'Instagram'), link('wechat', 'WeChat'), link('vk', 'VK')])
-    render(<Settings />)
+  it('reorders the registry from the keyboard and writes the new order', async () => {
+    const mock = await setupWithIcons([link('instagram', 'Instagram'), link('wechat', 'WeChat'), link('vk', 'VK')])
+    render(<Settings section="social" />)
 
     const grips = screen.getAllByTitle('Drag to reorder')
     expect(grips).toHaveLength(3)
@@ -98,9 +109,9 @@ describe('social platform settings list', () => {
       .toEqual(['wechat', 'instagram', 'vk'])
   })
 
-  it('persists a manual SVG selection across remounts and can return to automatic matching', () => {
-    const mock = setup([link('custom', 'My platform')])
-    const view = render(<Settings />)
+  it('persists a manual SVG selection across remounts and can return to automatic matching', async () => {
+    const mock = await setupWithIcons([link('custom', 'My platform')])
+    const view = render(<Settings section="social" />)
     fireEvent.click(screen.getByRole('button', { name: 'Choose icon for My platform' }))
     const picker = render(<>{mock.popovers[0].node}</>)
     fireEvent.change(picker.getByRole('textbox', { name: 'Search icons' }), { target: { value: 'github' } })
@@ -109,7 +120,7 @@ describe('social platform settings list', () => {
     expect(getSettings().socials[0].icon).toBe('github')
     expect(resolveSocial({ platform: 'custom' }, getSettings().socials).icon).toBe(contactIcon('github'))
     view.unmount()
-    render(<Settings />)
+    render(<Settings section="social" />)
     fireEvent.click(screen.getByRole('button', { name: 'Choose icon for My platform' }))
     const reopened = render(<>{mock.popovers[1].node}</>)
     expect(reopened.getByRole('button', { name: 'github.svg' })).toHaveAttribute('aria-pressed', 'true')
@@ -118,14 +129,14 @@ describe('social platform settings list', () => {
     expect(getSettings().socials[0].icon).toBeUndefined()
   })
 
-  it('matches a renamed platform by its label instead of its original id', () => {
-    setup([{ ...link('instagram', 'GitHub'), icon: undefined }])
+  it('matches a renamed platform by its label instead of its original id', async () => {
+    await setupWithIcons([{ ...link('instagram', 'GitHub'), icon: undefined }])
     expect(resolveSocial({ platform: 'instagram' }, getSettings().socials).icon).toBe(contactIcon('github'))
   })
 
-  it('keeps a manual icon chosen before adding a custom platform', () => {
-    const mock = setup([link('instagram', 'Instagram')])
-    render(<Settings />)
+  it('keeps a manual icon chosen before adding a custom platform', async () => {
+    const mock = await setupWithIcons([link('instagram', 'Instagram')])
+    render(<Settings section="social" />)
     fireEvent.change(screen.getByRole('textbox', { name: 'New platform name' }), { target: { value: 'My site' } })
     fireEvent.click(screen.getByRole('button', { name: 'Choose icon for My site' }))
     const picker = render(<>{mock.popovers[0].node}</>)
@@ -135,9 +146,9 @@ describe('social platform settings list', () => {
     expect(getSettings().socials[1]).toMatchObject({ label: 'My site', icon: 'github' })
   })
 
-  it('deletes a platform on the second click of its remove button', () => {
-    const mock = setup([link('instagram', 'Instagram'), link('wechat', 'WeChat')])
-    render(<Settings />)
+  it('deletes a platform on the second click of its remove button', async () => {
+    const mock = await setupWithIcons([link('instagram', 'Instagram'), link('wechat', 'WeChat')])
+    render(<Settings section="social" />)
 
     const remove = screen.getByRole('button', { name: 'Remove WeChat' })
     fireEvent.click(remove)
@@ -149,8 +160,8 @@ describe('social platform settings list', () => {
 })
 
 describe('contact social rows', () => {
-  it('edits notes in the shared note field', () => {
-    setup()
+  it('edits notes in the shared note field', async () => {
+    await setupWithIcons()
     const { container } = render(<ContactForm contact={null} />)
     const notes = container.querySelector('textarea.ct-notes-editor') as HTMLTextAreaElement
     expect(notes).toBeTruthy()
@@ -160,7 +171,7 @@ describe('contact social rows', () => {
   })
 
   it('picks a platform by its icon and stores the platform, not a typed name', async () => {
-    const mock = setup([link('instagram', 'Instagram'), link('wechat', 'WeChat'), link('vk', 'VK')])
+    const mock = await setupWithIcons([link('instagram', 'Instagram'), link('wechat', 'WeChat'), link('vk', 'VK')])
     render(<ContactForm contact={null} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Add social' }))
@@ -177,8 +188,8 @@ describe('contact social rows', () => {
     expect(screen.getByRole('button', { name: 'Platform: WeChat' })).toBeTruthy()
   })
 
-  it('offers an unknown platform typed into the picker search', () => {
-    const mock = setup([link('instagram', 'Instagram')])
+  it('offers an unknown platform typed into the picker search', async () => {
+    const mock = await setupWithIcons([link('instagram', 'Instagram')])
     render(<ContactForm contact={null} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Add social' }))
@@ -192,8 +203,8 @@ describe('contact social rows', () => {
     expect(screen.getByRole('button', { name: 'Platform: Chingari' })).toBeTruthy()
   })
 
-  it('reorders a contact’s social rows from the keyboard', () => {
-    setup([link('instagram', 'Instagram'), link('vk', 'VK')])
+  it('reorders a contact’s social rows from the keyboard', async () => {
+    await setupWithIcons([link('instagram', 'Instagram'), link('vk', 'VK')])
     render(<ContactForm contact={null} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Add social' }))
@@ -210,19 +221,36 @@ describe('contact social rows', () => {
 })
 
 describe('durable contact icons', () => {
-  it('preserves saved overrides, discovers new files, and creates only missing defaults', async () => {
-    const mock = setup()
+  it('seeds missing defaults into the asset folder, keeps saved overrides and discovers new files', async () => {
     const custom = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /></svg>'
-    await mock.api.data.files.writeTextGuarded('contact-icon/instagram.svg', custom, null)
-    await mock.api.data.files.writeTextGuarded('contact-icon/my-platform.svg', custom, null)
+    const files = new Map<string, string>([['instagram.svg', custom], ['my-platform.svg', custom]])
+    const opened: unknown[] = []
+    const storage = {
+      open: vi.fn(async (request: unknown) => { opened.push(request); return { handle: 'h' } }),
+      close: vi.fn(async () => {}),
+      mkdir: vi.fn(async () => {}),
+      list: vi.fn(async () => [...files].map(([name, text]) => ({ name, kind: 'file', size: text.length }))),
+      write: vi.fn(async (location: { path: string }, text: string) => { files.set(location.path, text) }),
+      read: vi.fn(async (location: { path: string }) => files.get(location.path) ?? '')
+    }
+    const result = await readContactIcons({ storage } as never)
+    expect(opened[0]).toMatchObject({ area: 'metadata', path: 'assets/icons/contacts-icon' })
+    expect(files.get('instagram.svg')).toBe(custom)
+    expect(files.get('github.svg')).toContain('<svg')
+    expect(result.icons.instagram).toBe(custom)
+    expect(result.icons['my-platform']).toBe(custom)
+    await readContactIcons({ storage } as never)
+    expect(files.get('instagram.svg')).toBe(custom)
+  })
+
+  it('draws the folder icons, a saved override included', async () => {
+    const custom = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /></svg>'
+    const mock = setup()
+    mock.api.backend.call = vi.fn(async () => ({ icons: { ...CONTACT_ICON_SVGS, instagram: custom, 'my-platform': custom } })) as never
     await act(async () => refreshContactIcons(mock.api))
-    expect(await mock.api.data.files.readText('contact-icon/instagram.svg')).toBe(custom)
-    expect(await mock.api.data.files.readText('contact-icon/github.svg')).toContain('<svg')
     expect(hasContactIcon('My Platform')).toBe(true)
     const { container } = render(React.createElement(contactIcon('Instagram')))
     expect(container.querySelector('circle')).toBeTruthy()
-    await act(async () => refreshContactIcons(mock.api))
-    expect(await mock.api.data.files.readText('contact-icon/instagram.svg')).toBe(custom)
   })
 
   it('removes active content and external resources from custom SVGs', () => {

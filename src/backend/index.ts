@@ -5,6 +5,7 @@ import type { FileBaseline, TextDocumentRead } from '@valley/plugin-sdk/types'
 import { CONFIG_DIR } from '@valley/plugin-sdk/paths'
 import { deleteContact, renameContactFile, saveContact, type ContactDocumentOwner } from '../contactDocuments'
 import { emptyContact, parseContactFile } from '../schema'
+import { readContactIcons } from './icons'
 
 /** Largest NOTE a command accepts: measured to save and read back well inside one 1000 ms guest CPU turn. */
 export const NOTE_LIMIT = 256 * 1024
@@ -191,5 +192,6 @@ export function register(api: PluginBackendApi): () => void {
     await new Promise<void>(resolve => setTimeout(resolve, 0))
     return value
   }))
+  disposers.push(api.rpc.handle('contactIcons', () => readContactIcons(api)))
   return () => { workflow.dispose(); disposers.forEach(dispose => dispose()) }
 }

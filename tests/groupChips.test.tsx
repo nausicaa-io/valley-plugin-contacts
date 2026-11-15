@@ -120,7 +120,7 @@ describe('DetailView group chips', () => {
 
     fireEvent.click(screen.getByText('Group').closest('button')!)
     fireEvent.mouseDown(screen.getByText('Groups'))
-    expect(mock.api.workspace.openSettings).toHaveBeenCalledWith('groups')
+    expect(mock.api.workspace.openSettings).toHaveBeenCalledWith('plugin:contacts#groups')
   })
 
   it('removes a group and preserves remaining groups', async () => {
@@ -209,16 +209,16 @@ describe('Page ⋯ actions menu', () => {
     void mock.api.settings.set('lastOpen', { selectedPath: contact.relPath, mode: 'detail' })
     await act(async () => render(React.createElement(Page, { navigation: { setController: vi.fn() } })))
 
-    await menuItem(mock, 'reveal').onSelect?.()
-    await menuItem(mock, 'open-external').onSelect?.()
+    await menuItem(mock, 'reveal').onSelect?.({ newTab: false })
+    await menuItem(mock, 'open-external').onSelect?.({ newTab: false })
     expect(mock.osFileActions).toEqual([
       { action: 'reveal', relPath: contact.relPath },
       { action: 'openWithDefaultApp', relPath: contact.relPath }
     ])
 
-    await menuItem(mock, 'copy-relative').onSelect?.()
-    await menuItem(mock, 'copy-absolute').onSelect?.()
-    await menuItem(mock, 'copy-link').onSelect?.()
+    await menuItem(mock, 'copy-relative').onSelect?.({ newTab: false })
+    await menuItem(mock, 'copy-absolute').onSelect?.({ newTab: false })
+    await menuItem(mock, 'copy-link').onSelect?.({ newTab: false })
     expect(clipboard.mock.calls.flat()).toEqual([
       contact.relPath,
       `/mock/realm/${contact.relPath}`,
@@ -232,12 +232,12 @@ describe('Page ⋯ actions menu', () => {
     void mock.api.settings.set('lastOpen', { selectedPath: contact.relPath, mode: 'detail' })
     await act(async () => render(React.createElement(Page, { navigation: { setController: vi.fn() } })))
 
-    await act(async () => menuItem(mock, 'trash').onSelect?.())
+    await act(async () => menuItem(mock, 'trash').onSelect?.({ newTab: false }))
     await waitFor(() => expect(mock.confirmations).toHaveLength(1))
     expect(mock.api.realm.trashTextDocumentGuarded).not.toHaveBeenCalled()
 
     vi.mocked(mock.api.ui.confirm).mockResolvedValueOnce('delete')
-    await act(async () => menuItem(mock, 'trash').onSelect?.())
+    await act(async () => menuItem(mock, 'trash').onSelect?.({ newTab: false }))
 
     await waitFor(() => {
       expect(mock.api.realm.trashTextDocumentGuarded).toHaveBeenCalledWith(contact.relPath, expect.any(String))
@@ -254,7 +254,7 @@ describe('Page ⋯ actions menu', () => {
     await act(async () => render(React.createElement(Page, { navigation: { setController: vi.fn() } })))
     vi.mocked(mock.api.ui.confirm).mockResolvedValueOnce('delete')
     vi.mocked(mock.api.realm.trashTextDocumentGuarded).mockResolvedValueOnce({ ok: false, reason: 'stale' })
-    await act(async () => menuItem(mock, 'trash').onSelect?.())
+    await act(async () => menuItem(mock, 'trash').onSelect?.({ newTab: false }))
     expect(await screen.findByRole('alert')).toHaveTextContent('contains unsaved text')
     expect(await mock.api.realm.readFile(contact.relPath)).not.toBe('')
   })
@@ -278,6 +278,17 @@ describe('Panel group filter layout', () => {
     expect(within(list).getByText('Chanterelle')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Search contacts')).toBe(input)
     expect(input.parentElement).toBe(frame)
+  })
+
+  it('shows groups as plain tag chips and hides them when the setting is off', async () => {
+    const mock = setupPanelContacts()
+    await getStore(mock.api).ready()
+    const { container } = render(React.createElement(Panel))
+    await waitFor(() => expect(container.querySelectorAll('.ct-tag').length).toBeGreaterThan(0))
+    expect(container.querySelector('.ct-tag-dot')).toBeNull()
+    expect(container.querySelector('.ct-avatar')?.getAttribute('style')).toBeNull()
+    await act(async () => { await mock.api.settings.set('showGroupsInList', false) })
+    await waitFor(() => expect(container.querySelector('.ct-tag')).toBeNull())
   })
 
   it('uses the header group popover to filter several groups', async () => {
@@ -330,7 +341,7 @@ describe('Panel group filter layout', () => {
     expect(within(list).getByText('Badger')).toBeTruthy()
 
     fireEvent.click(within(popover.container).getByRole('button', { name: 'Group' }))
-    expect(mock.api.workspace.openSettings).toHaveBeenCalledWith('groups')
+    expect(mock.api.workspace.openSettings).toHaveBeenCalledWith('plugin:contacts#groups')
   })
 })
 
@@ -359,14 +370,14 @@ describe('Contacts surface edit targeting', () => {
     const show = vi.spyOn(mock.api.workspace, 'openMainTab')
     const providers = mock.api.interop.extensions.providers(PLUGIN_SURFACE_V1)
     const sidebar = providers.find((entry) => entry.extension.surface === 'left_sidebar')!.extension
-    await sidebar.getSnapshot().actions!.find((item) => item.id === 'edit')!.onSelect!()
+    await sidebar.getSnapshot().actions!.find((item) => item.id === 'edit')!.onSelect!({ newTab: false })
     expect(show).toHaveBeenLastCalledWith()
     const mainEdit = vi.fn()
     setContactSurfaceActions([{ id: 'edit', label: 'Edit', onSelect: mainEdit }])
-    await sidebar.getSnapshot().actions!.find((item) => item.id === 'edit')!.onSelect!()
+    await sidebar.getSnapshot().actions!.find((item) => item.id === 'edit')!.onSelect!({ newTab: false })
     expect(show).toHaveBeenLastCalledWith()
     expect(mainEdit).not.toHaveBeenCalled()
-    await providers.find((entry) => entry.extension.surface === 'main_workspace')!.extension.getSnapshot().actions!.find((item) => item.id === 'edit')!.onSelect!()
+    await providers.find((entry) => entry.extension.surface === 'main_workspace')!.extension.getSnapshot().actions!.find((item) => item.id === 'edit')!.onSelect!({ newTab: false })
     expect(show).toHaveBeenLastCalledWith()
     expect(mock.api.workspace.showProperties).not.toHaveBeenCalled()
   })

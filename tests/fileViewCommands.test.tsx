@@ -88,7 +88,7 @@ describe('exact mounted Contact file actions', () => {
     const own = { kind: 'file', path, fileOperation: 'read' }
     for (const [kind, value] of Object.entries(values)) { expect(await fixture.invokeDeclared({ type: 'link-open', kind: kind as 'phone', index: 0 })).toEqual([own]); expect(links).toHaveBeenLastCalledWith(value) }
     expect(await fixture.invokeDeclared({ type: 'link-open', kind: 'relation', index: 0 })).toEqual(expect.arrayContaining([own, { kind: 'file', path: relatedPath, fileOperation: 'read' }])); expect(getStore(fixture.mock.api).getSnapshot().selectedPath).toBe(relatedPath); expect(open).toHaveBeenCalledWith({ newTab: undefined })
-    expect(await fixture.invokeDeclared({ type: 'settings' })).toEqual([own]); expect(settings).toHaveBeenCalledWith('groups')
+    expect(await fixture.invokeDeclared({ type: 'settings' })).toEqual([own]); expect(settings).toHaveBeenCalledWith('plugin:contacts#groups')
   })
 
   it('opens clicked reading phone and email links as typed host links, not raw tel:/mailto: URLs', async () => {

@@ -62,6 +62,7 @@ const FIELDS = {
   socialMedia: ['SOCIALPROFILE', 'X-SOCIALPROFILE'],
   relations: ['RELATED', 'X-ABRELATEDNAMES'],
   cover: ['X-VALLEY-COVER'],
+  photo: ['PHOTO'],
   events: ['X-VALLEY-EVENT'],
   lastContact: ['X-VALLEY-LASTCONTACT'],
   note: ['NOTE'],
@@ -363,6 +364,8 @@ function fieldProperties(contact: Contact, key: FieldKey): PropertyInput[] {
       })
     case 'cover':
       return text('X-VALLEY-COVER', contact.cover)
+    case 'photo':
+      return contact.photo.startsWith('data:image/') ? [{ name: 'PHOTO', value: contact.photo }] : []
     case 'events':
       return contact.events.flatMap((event) => text('X-VALLEY-EVENT', event))
     case 'lastContact':
