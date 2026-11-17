@@ -312,6 +312,12 @@ export function groupColorFor(group: string | null | undefined, configured: Cont
   return sharedGroupColorFor(group, configured)
 }
 
+/** The main group a subgroup sits under, for the "Main · Sub" chip label. */
+export function parentGroupName(name: string, configured: readonly ContactGroup[]): string | undefined {
+  const parent = groupForName(configured, name)?.parent
+  return parent ? configured.find((group) => group.id === parent)?.name : undefined
+}
+
 function baseName(path: string): string {
   return path.split('/').pop() ?? path
 }

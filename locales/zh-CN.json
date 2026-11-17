@@ -213,5 +213,6 @@
   "contacts.notes.hint": "支持 Markdown、[[链接]] 和 #标签 · ⌘↵ 保存",
   "contacts.notes.words": "{{count}} 个词",
   "contacts.settings.showGroupsInList": "在列表中显示分组",
-  "contacts.settings.showGroupsInListDesc": "在侧边栏列表中，将每位联系人的分组显示为名称下方的标签。"
+  "contacts.settings.showGroupsInListDesc": "在侧边栏列表中，将每位联系人的分组显示为名称下方的标签。",
+  "contacts.form.yearUnknown": "年份未知"
 }

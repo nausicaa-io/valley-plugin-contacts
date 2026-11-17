@@ -213,5 +213,6 @@
   "contacts.notes.hint": "Markdown, [[liens]] et #tags · ⌘↵ enregistre",
   "contacts.notes.words": "{{count}} mots",
   "contacts.settings.showGroupsInList": "Afficher les groupes dans la liste",
-  "contacts.settings.showGroupsInListDesc": "Afficher les groupes de chaque contact en étiquettes sous le nom dans la liste latérale."
+  "contacts.settings.showGroupsInListDesc": "Afficher les groupes de chaque contact en étiquettes sous le nom dans la liste latérale.",
+  "contacts.form.yearUnknown": "Année inconnue"
 }

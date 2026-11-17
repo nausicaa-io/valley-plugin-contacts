@@ -213,5 +213,6 @@
   "contacts.notes.hint": "Markdown, [[links]] and #tags · ⌘↵ saves",
   "contacts.notes.words": "{{count}} words",
   "contacts.settings.showGroupsInList": "Show groups in the list",
-  "contacts.settings.showGroupsInListDesc": "Show each contact's groups as tags under the name in the sidebar list."
+  "contacts.settings.showGroupsInListDesc": "Show each contact's groups as tags under the name in the sidebar list.",
+  "contacts.form.yearUnknown": "Year unknown"
 }

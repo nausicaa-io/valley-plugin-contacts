@@ -213,5 +213,6 @@
   "contacts.notes.hint": "Markdown, [[Links]] und #Tags · ⌘↵ speichert",
   "contacts.notes.words": "{{count}} Wörter",
   "contacts.settings.showGroupsInList": "Gruppen in der Liste anzeigen",
-  "contacts.settings.showGroupsInListDesc": "Die Gruppen jedes Kontakts als Tags unter dem Namen in der Seitenleiste anzeigen."
+  "contacts.settings.showGroupsInListDesc": "Die Gruppen jedes Kontakts als Tags unter dem Namen in der Seitenleiste anzeigen.",
+  "contacts.form.yearUnknown": "Jahr unbekannt"
 }

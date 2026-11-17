@@ -114,21 +114,25 @@ const CSS = `
 .ct-detail-name { font-size:1.4375rem; font-weight:700; color:var(--text-color); margin:0; overflow-wrap:anywhere; }
 .ct-detail-sub { font-size:0.8125rem; color:var(--text-secondary); margin:2px 0 0; }
 
-.ct-chips { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:24px; min-height:26px; }
+.ct-chips { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:24px; min-height:24px; }
 .ct-chips.saving { opacity:.82; }
-.ct-chip { display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border:1px solid transparent;
-  border-radius:999px; background:var(--accent-tint-bg); color:var(--accent-tint-text, var(--accent-color)); font-size:0.71875rem;
-  font-weight:600; text-transform:capitalize; }
-.ct-chip button { display:grid; place-items:center; border:none; background:none; color:inherit; cursor:pointer;
-  padding:0; opacity:.6; }
-.ct-chip button:hover { opacity:1; }
-.ct-chip button svg { width:11px; height:11px; }
-.ct-chip-add { display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:999px;
-  border:1px dashed var(--border-medium, rgba(128,128,128,.4)); background:none; color:var(--text-secondary);
-  font-size:0.71875rem; font-weight:600; cursor:pointer; }
-.ct-chip-add:hover { color:var(--text-color); border-color:var(--text-secondary); }
+.ct-chip, .ct-group-pill { display:inline-flex; align-items:center; gap:5px; max-width:100%; height:20px; padding:0 7px;
+  overflow:hidden; border:none; border-radius:999px; background:color-mix(in srgb, var(--ct-group-color) 16%, transparent);
+  color:var(--ct-group-color); font-size:var(--smaller-font-size, 0.75rem); font-weight:var(--font-medium, 500); white-space:nowrap; }
+.ct-chip-dot { width:7px; height:7px; flex:0 0 auto; border-radius:50%; background:currentColor; }
+.ct-chip-name { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+/* The main group a subgroup sits under: same pill, quieter (17 Nov). */
+.ct-chip-parent { opacity:.7; }
+.ct-chip button, .ct-group-pill button { display:grid; place-items:center; flex:0 0 auto; border:none; background:none; color:inherit;
+  cursor:pointer; padding:0; opacity:.6; }
+.ct-chip button:hover, .ct-group-pill button:hover { opacity:1; }
+.ct-chip button svg, .ct-group-pill button svg { width:10px; height:10px; }
+.ct-chip-add { display:inline-flex; align-items:center; gap:3px; height:20px; padding:0 4px; border:none; border-radius:4px;
+  background:none; color:var(--text-tertiary); font-size:var(--smaller-font-size, 0.75rem); font-weight:var(--font-medium, 500); cursor:pointer; }
+.ct-chip-add svg { width:11px; height:11px; }
+.ct-chip-add:hover { color:var(--text-color); }
 .ct-chip-picker { position:relative; display:inline-flex; align-items:center; z-index:3; }
-.ct-chip-input { height:24px; padding:2px 10px; border-radius:999px; border:1px solid var(--accent-color);
+.ct-chip-input { height:22px; padding:2px 10px; border-radius:999px; border:1px solid var(--accent-color);
   background:var(--surface-color-alt); color:var(--text-color); font-size:0.71875rem; outline:none; width:150px;
   box-shadow:0 0 0 2px color-mix(in srgb, var(--accent-color) 13%, transparent); }
 .ct-chip-popover { position:absolute; left:0; top:calc(100% + 6px); min-width:210px; max-width:min(280px, 70vw);
@@ -180,17 +184,16 @@ const CSS = `
   border:1px solid var(--border-medium, rgba(128,128,128,.3)); background:var(--container-color-alt);
   color:var(--text-color); font-size:0.8125rem; outline:none; }
 .ct-input:focus, .ct-select:focus { border-color:var(--accent-color); }
+.ct-birthdate { display:flex; align-items:center; gap:10px; }
+.ct-birthdate > :first-child { flex:1; min-width:0; }
+.ct-birthdate-noyear { display:inline-flex; align-items:center; gap:6px; flex:0 0 auto; color:var(--text-secondary); font-size:0.75rem; white-space:nowrap; }
 .ct-file-name { display:flex; align-items:center; gap:7px; }
 .ct-file-name .ct-input { flex:1; }
 .ct-file-ext { flex-shrink:0; font-size:0.75rem; color:var(--text-tertiary); }
 .ct-group-editor { display:flex; flex-direction:column; gap:7px; }
 .ct-group-pills { display:flex; flex-wrap:wrap; gap:6px; min-height:24px; }
-.ct-group-pill { display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border:1px solid transparent;
-  border-radius:999px; font-size:0.71875rem; font-weight:600; text-transform:capitalize; cursor:grab; user-select:none; }
+.ct-group-pill { cursor:grab; user-select:none; }
 .ct-group-pill:active { cursor:grabbing; }
-.ct-group-pill button { display:grid; place-items:center; border:none; background:none; color:inherit; cursor:pointer; padding:0; opacity:.65; }
-.ct-group-pill button:hover { opacity:1; }
-.ct-group-pill button svg { width:11px; height:11px; }
 .ct-group-add { display:flex; gap:7px; align-items:center; }
 .ct-group-add .ct-input { flex:1; }
 .ct-group-add .ct-rep-add { flex-shrink:0; }

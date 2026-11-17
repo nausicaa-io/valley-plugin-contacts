@@ -4,8 +4,8 @@ import { assetUrlForRelPath } from '@valley/plugin-sdk/fileTypes'
 import { React, api } from './runtime'
 import type { Contact } from './types'
 import { getStore } from './store'
-import { paletteCssAlpha, paletteCssValue } from '@valley/plugin-sdk/palette'
-import { allGroups, getSocialLinks, groupColorFor, normalizeGroupName, relationLabel, resolveRelation, saveContact } from './data'
+import { paletteCssValue } from '@valley/plugin-sdk/palette'
+import { allGroups, getSocialLinks, groupColorFor, normalizeGroupName, parentGroupName, relationLabel, resolveRelation, saveContact } from './data'
 import { RELATION_COLORS, RELATION_LABELS } from './relationGraphModel'
 import { formatContactBirthdate, initials } from './util'
 import { resolveSocial } from './social'
@@ -77,10 +77,12 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
     return () => document?.removeEventListener('mousedown', closePicker)
   }, [addingChip])
 
+  const groupLabel = (group: string): string => {
+    const parent = parentGroupName(group, snap.groupConfigs)
+    return parent ? `${parent} · ${group}` : group
+  }
   const groupStyle = (group: string): CSSProperties => {
-    const stored = groupColorFor(group, snap.groupConfigs)
-    const color = paletteCssValue(stored)
-    return { borderColor: color, color, background: paletteCssAlpha(stored, 13) }
+    return { '--ct-group-color': paletteCssValue(groupColorFor(group, snap.groupConfigs)) } as CSSProperties
   }
 
   const persistGroups = async (nextGroups: string[], commandContext?: ContactFileActionContext): Promise<void> => {
@@ -203,9 +205,10 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
 
       <div className={`ct-chips${savingGroups ? ' saving' : ''}`}>
         {groups.map((group) => (
-          <span key={group} className="ct-chip" style={groupStyle(group)}>
-            {group}
-            <button onClick={() => removeGroup(group)} title={uiText('auto.9a5319bc9fe3')}><X /></button>
+          <span key={group} className="ct-chip" style={groupStyle(group)} title={groupLabel(group)}>
+            <span className="ct-chip-dot" aria-hidden="true" />
+            <span className="ct-chip-name">{parentGroupName(group, snap.groupConfigs) && <span className="ct-chip-parent">{parentGroupName(group, snap.groupConfigs)} · </span>}{group}</span>
+            <button onClick={() => removeGroup(group)} title={uiText('auto.9a5319bc9fe3')} aria-label={uiText('auto.9a5319bc9fe3')}><X /></button>
           </span>
         ))}
         {addingChip ? (
@@ -218,7 +221,7 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
               onChange={(e) => setChipValue((e.target as HTMLInputElement).value)}
               onKeyDown={onGroupInputKeyDown}
             />
-            <span className="ct-chip-popover" role="listbox">
+            <span className="ct-chip-popover" role="listbox" data-plugin-widget-occluder="">
               {suggestedGroups.map((group, i) => (
                 <button
                   key={group}

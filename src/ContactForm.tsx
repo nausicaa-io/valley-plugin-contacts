@@ -6,8 +6,8 @@ import type { TextDocumentRead } from '@valley/plugin-sdk/types'
 import type { Contact, ContactMethod, Organization, RelationType, Social, SocialLink } from './types'
 import { RELATION_TYPES } from './types'
 import { getStore } from './store'
-import { paletteCssAlpha, paletteCssValue } from '@valley/plugin-sdk/palette'
-import { allGroups, contactFileBase, groupColorFor, normalizeGroupName, readContactDocument, relationLabel, relationTarget, saveContact, UNTITLED_FILE_BASE } from './data'
+import { paletteCssValue } from '@valley/plugin-sdk/palette'
+import { allGroups, contactFileBase, groupColorFor, normalizeGroupName, parentGroupName, readContactDocument, relationLabel, relationTarget, saveContact, UNTITLED_FILE_BASE } from './data'
 import { emptyContact, parseContactFile } from './schema'
 import { RELATION_LABELS } from './relationGraphModel'
 import { GripVertical, Plus, X } from './icons'
@@ -304,9 +304,7 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
   }, [autosave, contactKey, contact, valleyReady, api, draftKey, dateFormat, store])
 
   const groupStyle = (group: string): CSSProperties => {
-    const stored = groupColorFor(group, snap.groupConfigs)
-    const color = paletteCssValue(stored)
-    return { borderColor: color, color, background: paletteCssAlpha(stored, 13) }
+    return { '--ct-group-color': paletteCssValue(groupColorFor(group, snap.groupConfigs)) } as CSSProperties
   }
 
   const addGroup = (): void => {
@@ -513,7 +511,7 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
         <Field label={uiText('auto.adec36a821f8')}><input className="ct-input" value={lastName} onChange={(e) => setLastName(val(e))} /></Field>
         <Field label={uiText('auto.17dbdb86621f')}><input className="ct-input" value={middleName} onChange={(e) => setMiddleName(val(e))} /></Field>
         <Field label={uiText('auto.ce2bd99c4758')}><input className="ct-input" value={nickname} onChange={(e) => setNickname(val(e))} /></Field>
-        <Field label={uiText('auto.ab5815528f10')}><input className="ct-input" value={birthdate} placeholder={dateFormatPlaceholder(dateFormat)} onChange={(e) => setBirthdate(val(e))} /></Field>
+        <Field label={uiText('auto.ab5815528f10')}><BirthdateField api={api} value={birthdate} dateFormat={dateFormat} onChange={setBirthdate} /></Field>
         <Field label={uiText('auto.6f528041b7e1')}><input className="ct-input" value={profession} onChange={(e) => setProfession(val(e))} /></Field>
         <Field label={uiText('auto.09979a78c995')} full>
           <div className="ct-file-name">
@@ -547,8 +545,10 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
                   }}
                   onDragEnd={() => setDragIndex(null)}
                 >
-                  {group}
+                  <span className="ct-chip-dot" aria-hidden="true" />
+                  <span className="ct-chip-name">{parentGroupName(group, snap.groupConfigs) && <span className="ct-chip-parent">{parentGroupName(group, snap.groupConfigs)} · </span>}{group}</span>
                   <button
+                    aria-label={uiText('auto.9a5319bc9fe3')}
                     onClick={() => {
                       const key = normalizeGroupName(group)
                       setGroups(groups.filter((g) => normalizeGroupName(g) !== key))
@@ -815,6 +815,46 @@ function replace<T>(arr: T[], i: number, item: T): T[] {
 }
 function remove<T>(arr: T[], i: number): T[] {
   return arr.filter((_, j) => j !== i)
+}
+
+// A leap year, so a year-less 29 February stays pickable; never saved (17 Nov).
+const YEARLESS_PICKER_YEAR = '2000'
+
+/** Birthday through the SDK DateField; "Year unknown" keeps the vCard's year-less `--MM-DD` form (17 Nov). */
+function BirthdateField({ api, value, dateFormat, onChange }: { api: ValleyPluginApi; value: string; dateFormat: string; onChange: (value: string) => void }): ReactElement {
+  const { DateField, Toggle } = api.ui.settings
+  const stored = parseContactDateInput(value, dateFormat)
+  const yearless = /^--(\d{2})-(\d{2})$/.exec(stored)
+  const full = /^\d{4}-\d{2}-\d{2}$/.test(stored)
+  const [noYear, setNoYear] = React.useState(Boolean(yearless))
+  React.useEffect(() => {
+    if (yearless) setNoYear(true)
+    else if (full) setNoYear(false)
+  }, [Boolean(yearless), full])
+  const pickerValue = full ? stored : yearless ? `${YEARLESS_PICKER_YEAR}-${yearless[1]}-${yearless[2]}` : ''
+  const label = uiText('auto.ab5815528f10')
+  return (
+    <div className="ct-birthdate">
+      <DateField
+        value={pickerValue}
+        ariaLabel={label}
+        // Free-text BDAY values stay saved untouched until a day is picked.
+        placeholder={!full && !yearless && stored ? stored : dateFormatPlaceholder(dateFormat)}
+        onChange={(next) => onChange(!next ? '' : noYear ? `--${next.slice(5)}` : formatContactDate(next, dateFormat))}
+      />
+      <span className="ct-birthdate-noyear">
+        <Toggle
+          checked={noYear}
+          label={uiText('contacts.form.yearUnknown')}
+          onChange={(on) => {
+            setNoYear(on)
+            if (on && full) onChange(`--${stored.slice(5)}`)
+          }}
+        />
+        <span aria-hidden="true">{uiText('contacts.form.yearUnknown')}</span>
+      </span>
+    </div>
+  )
 }
 
 function Field({ label, full, children }: { label: string; full?: boolean; children: ReactNode }): ReactElement {
