@@ -876,7 +876,8 @@ function Field({ label, full, children }: { label: string; full?: boolean; child
 /**
  * Addresses through the SDK AddressField: OpenStreetMap suggestions while typing,
  * free text still allowed. A picked suggestion keeps its structured parts, which
- * the card stores in ADR; typed text stays a plain address (17 Nov).
+ * the card stores in ADR and shows a small map under the field; typed text stays
+ * a plain address (17 Nov).
  */
 function PlaceList({ api, title, items, setItems, placeholder, labelPlaceholder }: {
   api: ValleyPluginApi
@@ -891,8 +892,8 @@ function PlaceList({ api, title, items, setItems, placeholder, labelPlaceholder 
     <div className="ct-rep">
       <div className="ct-form-section-title">{title}</div>
       {items.map((m, i) => (
-        <div className="ct-rep-row" key={i}>
-          <AddressField className="ct-address" ariaLabel={title} placeholder={placeholder}
+        <div className="ct-rep-row ct-place-row" key={i}>
+          <AddressField className="ct-address" ariaLabel={title} placeholder={placeholder} preview
             value={m.place ? { text: m.value, place: m.place } : m.value}
             onChange={(next) => {
               const { place: _previous, ...rest } = m

@@ -180,10 +180,14 @@ const CSS = `
 .ct-form-field.full { grid-column:1 / -1; }
 .ct-form-field label { font-size:0.6875rem; font-weight:600; text-transform:uppercase; letter-spacing:.03em;
   color:var(--text-tertiary); }
-.ct-input, .ct-select { width:100%; padding:7px 10px; border-radius:6px;
-  border:1px solid var(--border-medium, rgba(128,128,128,.3)); background:var(--container-color-alt);
-  color:var(--text-color); font-size:0.8125rem; outline:none; }
-.ct-input:focus, .ct-select:focus { border-color:var(--accent-color); }
+/* Own inputs wear the shared control tokens, like the SDK fields beside them (17 Nov). */
+.ct-input, .ct-select { width:100%; min-height:var(--control-min-height, 30px); padding:var(--control-padding, 6px 10px);
+  border-radius:var(--control-radius, var(--radius-sm, 5px)); border:1px solid var(--control-border, var(--border-medium));
+  background:var(--control-bg, var(--container-color)); color:var(--control-text, var(--text-color));
+  font-size:var(--small-font-size, 0.875rem); outline:none; }
+.ct-input::placeholder { color:var(--control-placeholder, var(--text-tertiary)); }
+.ct-input:focus, .ct-select:focus { border-color:var(--control-focus-border, var(--accent-color));
+  box-shadow:0 0 0 2px var(--control-focus-ring, transparent); }
 .ct-birthdate { display:flex; align-items:center; gap:10px; }
 .ct-birthdate > :first-child { flex:1; min-width:0; }
 .ct-birthdate-noyear { display:inline-flex; align-items:center; gap:6px; flex:0 0 auto; color:var(--text-secondary); font-size:0.75rem; white-space:nowrap; }
@@ -202,6 +206,8 @@ const CSS = `
 .ct-rep-row .ct-input { flex:1; }
 /* The address row's field is the SDK AddressField; it draws its own frame, so only its footprint is set here. */
 .ct-rep-row .ct-address { flex:1; min-width:0; }
+/* A picked address shows its map under the field; the type and remove controls stay level with the field. */
+.ct-place-row { align-items:flex-start; }
 .ct-rep-row .ct-select { flex:0 0 130px; }
 /* The relation-type picker is the shared SelectField; it owns its own frame, so
    only the row footprint is set here. */
