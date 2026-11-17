@@ -2,7 +2,7 @@ import type { ValleyPluginApi } from '@valley/plugin-sdk'
 import { React, api as runtimeApi } from './runtime'
 import type { Contact, ContactGroup, GroupNode } from './types'
 import { getContactIndex } from './indexOwner'
-import { ALL, UNCATEGORIZED, createContactProjection, getSettings } from './data'
+import { ALL, createContactProjection, getSettings } from './data'
 import { onLocalGroupsShown } from './groups'
 
 /** Persisted "what was open" shape, saved invisibly under the `lastOpen` setting key. */
@@ -31,8 +31,8 @@ export interface ContactsSnapshot {
   groupTree: GroupNode[]
   groupConfigs: ContactGroup[]
   coverPaths: Record<string, string | null>
-  hiddenGroups: string[]
-  hideUngrouped: boolean
+  /** The group rows the sidebar shows (`UNCATEGORIZED` for No group); empty shows every contact. */
+  selectedGroups: string[]
   selectedPath: string | null
   mode: ContactsMode
   canGoBack: boolean
@@ -46,7 +46,7 @@ export interface ContactsSnapshot {
 interface ContactsStore {
   getSnapshot(): ContactsSnapshot
   subscribe(listener: () => void): () => void
-  setGroupFilter(hiddenGroups: string[], hideUngrouped: boolean): void
+  setGroupFilter(selectedGroups: string[]): void
   openContact(relPath: string, options?: { persist?: boolean; newTab?: boolean; reveal?: boolean }): void
   startCreate(): void
   startEdit(): void
@@ -99,8 +99,7 @@ function createStore(api: ValleyPluginApi, onDispose: () => void): ContactsStore
     groupTree: [],
     groupConfigs: [],
     coverPaths: {},
-    hiddenGroups: [],
-    hideUngrouped: false,
+    selectedGroups: [],
     selectedPath: lastOpen.selectedPath,
     mode: lastOpen.mode,
     loaded: false,
@@ -241,12 +240,11 @@ function createStore(api: ValleyPluginApi, onDispose: () => void): ContactsStore
       ? snap.selectedPath
       : null
     const availableGroups = new Set(groupTree.filter((group) => group.id !== ALL).map((group) => group.id))
-    const hiddenGroups = snap.hiddenGroups.filter((group) => availableGroups.has(group))
-    const hideUngrouped = groupTree.some((group) => group.id === UNCATEGORIZED) && snap.hideUngrouped
+    const selectedGroups = snap.selectedGroups.filter((group) => availableGroups.has(group))
     // Capture before reassigning snap: reload only changes the persisted selection
     // when the open contact disappeared (deleted/renamed).
     const selectionChanged = selectedPath !== snap.selectedPath
-    if (!force && !settingsChanged && !selectionChanged && contacts === snap.contacts && groupTree === snap.groupTree && groupConfigs === snap.groupConfigs && coverPaths === snap.coverPaths && hiddenGroups.length === snap.hiddenGroups.length && hideUngrouped === snap.hideUngrouped && indexReady === snap.loaded) {
+    if (!force && !settingsChanged && !selectionChanged && contacts === snap.contacts && groupTree === snap.groupTree && groupConfigs === snap.groupConfigs && coverPaths === snap.coverPaths && selectedGroups.length === snap.selectedGroups.length && indexReady === snap.loaded) {
       settleWaiters()
       return
     }
@@ -256,8 +254,7 @@ function createStore(api: ValleyPluginApi, onDispose: () => void): ContactsStore
       groupTree,
       groupConfigs,
       coverPaths,
-      hiddenGroups,
-      hideUngrouped,
+      selectedGroups,
       selectedPath,
       loaded: indexReady,
       ...historyFlags(),
@@ -322,7 +319,7 @@ function createStore(api: ValleyPluginApi, onDispose: () => void): ContactsStore
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
-    setGroupFilter: (hiddenGroups, hideUngrouped) => set({ hiddenGroups, hideUngrouped }, { pushHistory: false }),
+    setGroupFilter: (selectedGroups) => set({ selectedGroups: [...new Set(selectedGroups)] }, { pushHistory: false }),
     openContact: (relPath, options) => {
       index.assertCurrent()
       // A new tab shows the card through its own file view, so the page's selection and the other tabs stay as they are.

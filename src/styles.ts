@@ -17,48 +17,48 @@ const CSS = `
 .ct-iconbtn:hover { background:var(--hover-bg); color:var(--text-color); }
 .ct-iconbtn svg { width:15px; height:15px; }
 .ct-header-actions { display:inline-flex; align-items:center; gap:5px; }
-.ct-group-filter-btn { display:flex; align-items:center; justify-content:center; width:auto; min-width:38px; height:26px;
-  gap:3px; padding:0 5px; border:none; border-radius:var(--radius-sm); background:transparent;
-  color:var(--text-tertiary); font-size:var(--smaller-font-size); font-variant-numeric:tabular-nums;
-  cursor:pointer; -webkit-app-region:no-drag; }
-.ct-group-filter-btn:hover { background:var(--hover-bg); color:var(--title-color); }
-.ct-group-filter-btn.active { background:var(--tree-active-bg); color:var(--accent-color); }
-.ct-group-filter-btn svg { width:15px; height:15px; }
 
-.ct-group-filter-popover { width:min(244px, calc(100vw - 16px)); padding:var(--space-1);
-  border-color:var(--border-light); border-radius:var(--radius-sm); background:var(--container-color);
-  box-shadow:0 10px 28px rgba(0,0,0,.2); }
-.ct-group-filter-popover-body { display:flex; flex-direction:column; }
-.ct-group-filter-popover-head { display:flex; align-items:center; justify-content:space-between; min-height:28px;
-  padding:0 var(--space-2) var(--space-1); border-bottom:1px solid var(--border-light); }
-.ct-group-filter-popover-title, .ct-group-filter-popover-all { padding:2px 4px; border:none;
-  border-radius:var(--radius-sm); background:transparent; font:inherit; font-size:var(--small-font-size); }
-.ct-group-filter-popover-title { color:var(--accent-color); font-weight:var(--font-semi-bold); cursor:pointer; }
-.ct-group-filter-popover-all { color:var(--text-tertiary); font-size:var(--smaller-font-size); cursor:pointer; }
-.ct-group-filter-popover-title:hover, .ct-group-filter-popover-all:hover { background:var(--hover-bg); color:var(--title-color); }
-.ct-group-filter-list { display:flex; flex-direction:column; min-width:148px; max-height:320px;
-  padding-top:var(--space-1); overflow-y:auto; }
-.ct-group-filter-option { display:flex; align-items:center; gap:7px; width:100%; min-height:28px;
-  padding:0 var(--space-2); border:none; border-radius:var(--radius-sm); background:transparent;
-  color:var(--text-color); font:inherit; font-size:var(--small-font-size); text-align:left; cursor:pointer; }
-.ct-group-filter-option:hover { background:var(--hover-bg); color:var(--text-color); }
-.ct-group-filter-option.active { border-radius:0; background:var(--hover-bg); color:var(--title-color); }
-.ct-group-filter-option.active.selection-run-start { border-top-left-radius:var(--radius-sm); border-top-right-radius:var(--radius-sm); }
-.ct-group-filter-option.active.selection-run-end { border-bottom-right-radius:var(--radius-sm); border-bottom-left-radius:var(--radius-sm); }
-.ct-group-filter-option.active:hover { background:color-mix(in srgb, var(--title-color) 14%, transparent); }
-.ct-group-filter-option.active:has(+ .ct-group-filter-option:hover),
-.ct-group-filter-option:hover:has(+ .ct-group-filter-option.active) { border-bottom-right-radius:0; border-bottom-left-radius:0; }
-.ct-group-filter-option.active + .ct-group-filter-option:hover,
-.ct-group-filter-option:hover + .ct-group-filter-option.active { border-top-left-radius:0; border-top-right-radius:0; }
-.ct-group-filter-check { display:grid; place-items:center; width:14px; height:14px; flex:0 0 14px;
-  color:var(--accent-color); font-size:.75rem; font-weight:var(--font-semi-bold); }
-.ct-group-filter-dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
-.ct-group-filter-dot.no-group { background:var(--text-tertiary); }
-.ct-group-filter-sub .ct-group-filter-dot { margin-left:14px; }
-.ct-group-filter-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.ct-group-filter-count { margin-left:auto; color:var(--text-tertiary); font-size:var(--smaller-font-size);
-  font-variant-numeric:tabular-nums; }
-.ct-group-filter-empty { padding:6px 8px; color:var(--text-tertiary); font-size:var(--small-font-size); }
+/* The Groups section between the search field and the list (17 Nov), in
+   To-Do's sidebar Groups design: the title folds the whole section, every row
+   keeps a slot for the fold chevron inside the row so the dots line up, and a
+   subgroup sits one step in. It never takes more than a third of the sidebar
+   and scrolls inside itself beyond that. */
+.ct-groups { display:flex; flex-direction:column; flex:0 1 auto; min-height:0; max-height:34%; margin:0 5px 4px; padding-bottom:6px;
+  border-bottom:1px solid var(--border-light); }
+.ct-groups.folded { padding-bottom:2px; }
+.ct-groups-head { display:flex; align-items:center; gap:2px; flex:none; min-height:28px; }
+.ct-groups-title { display:flex; align-items:center; gap:6px; flex:1; min-width:0; height:26px; padding:0 4px; border:none;
+  border-radius:var(--radius-sm); background:none; color:var(--text-tertiary); font-family:var(--interface-font);
+  font-size:var(--small-font-size); font-weight:var(--font-semi-bold); text-align:left; cursor:pointer; }
+.ct-groups-title:hover { color:var(--title-color); }
+.ct-groups-title:focus-visible, .ct-groups-row:focus-visible { outline:2px solid var(--accent-color); outline-offset:-2px; }
+.ct-groups-chevron { display:inline-grid; place-items:center; width:18px; height:18px; flex:none; margin-right:-2px; }
+.ct-groups-chevron svg { width:12px; height:12px; }
+.ct-groups-name { flex:none; }
+.ct-groups-summary { min-width:0; overflow:hidden; color:var(--title-color); font-weight:var(--font-normal, 400);
+  text-overflow:ellipsis; white-space:nowrap; }
+.ct-groups-head .panel-tool-btn { flex:none; }
+.ct-groups-list { display:flex; flex-direction:column; gap:2px; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+.ct-groups-item { position:relative; flex:none; }
+.ct-groups-row { display:flex; align-items:center; gap:6px; width:100%; min-height:28px; padding:4px 7px 4px 24px;
+  border:none; border-radius:var(--radius-sm); background:none; color:var(--text-secondary);
+  font-family:var(--interface-font); font-size:var(--small-font-size); text-align:left; cursor:pointer; user-select:none; }
+/* The chevron lies over the row, so hovering it lights the whole row like the rest of it. */
+.ct-groups-row:hover, .ct-groups-item:has(.ct-groups-fold:hover) > .ct-groups-row { background:var(--hover-bg); color:var(--text-color); }
+/* Declared after :hover so the selected rows keep their tint under the pointer. */
+.ct-groups-row.active, .ct-groups-item:has(.ct-groups-fold:hover) > .ct-groups-row.active { background:var(--accent-tint-bg); color:var(--title-color); }
+.ct-groups-dot { width:8px; height:8px; margin:0 3px; border-radius:50%; flex:none; }
+.ct-groups-dot.all { box-sizing:border-box; border:1.5px solid currentColor; opacity:.75; }
+.ct-groups-dot.none { background:var(--text-tertiary); }
+.ct-groups-row.sub .ct-groups-dot { margin-left:17px; }
+.ct-groups-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ct-groups-count { flex:none; color:var(--text-tertiary); font-size:var(--smaller-font-size); font-variant-numeric:tabular-nums; }
+.ct-groups-row.active .ct-groups-count { color:inherit; }
+.ct-groups-fold { position:absolute; top:50%; left:4px; z-index:1; display:inline-flex; align-items:center; justify-content:center;
+  width:18px; height:18px; padding:0; border:none; border-radius:var(--radius-sm); background:none;
+  color:var(--text-tertiary); transform:translateY(-50%); cursor:pointer; }
+.ct-groups-fold:hover { color:var(--title-color); }
+.ct-groups-fold svg { width:14px; height:14px; }
 
 
 .ct-list { flex:1; display:flex; flex-direction:column; gap:3px; padding:0 5px 14px; overflow-y:auto; min-height:0; }

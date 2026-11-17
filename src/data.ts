@@ -263,7 +263,8 @@ export function buildGroupTree(contacts: Contact[], configured: ContactGroup[] =
       count: configured.some((candidate) => candidate.parent === group.id)
         ? filterByGroup(contacts, group.name, configured).length
         : counts.get(group.name) ?? 0,
-      ...(group.parent ? { sub: true } : {})
+      key: group.id,
+      ...(group.parent ? { sub: true, parent: configured.find((candidate) => candidate.id === group.parent)?.name } : {})
     })),
     ...[...counts.entries()]
       .filter(([name]) => !configuredKeys.has(normalizeGroupName(name)))
@@ -289,17 +290,46 @@ export function filterByGroup(contacts: Contact[], groupId: string, configured: 
   return contacts.filter((contact) => contact.groups.some((name) => covered.has(normalizeGroupName(name))))
 }
 
-/** Hiding a group hides its subgroups with it. */
-export function filterByGroupVisibility(
+/**
+ * The sidebar's Groups filter (17 Nov): the selected group rows, `UNCATEGORIZED`
+ * for No group. Nothing selected shows every contact; otherwise a contact shows
+ * when it is in one of the selected groups, a group covering its subgroups.
+ */
+export function filterBySelectedGroups(
   contacts: Contact[],
-  hiddenGroups: string[],
-  hideUngrouped: boolean,
+  selected: readonly string[],
   configured: readonly ContactGroup[] = getContactGroups()
 ): Contact[] {
-  const hidden = new Set(hiddenGroups.flatMap((name) => [...coveredGroupNames(name, configured)]))
+  if (!selected.length) return contacts
+  const ungrouped = selected.includes(UNCATEGORIZED)
+  const covered = new Set(selected.filter((id) => id !== UNCATEGORIZED && id !== ALL).flatMap((name) => [...coveredGroupNames(name, configured)]))
   return contacts.filter((contact) => contact.groups.length === 0
-    ? !hideUngrouped
-    : contact.groups.some((name) => !hidden.has(normalizeGroupName(name))))
+    ? ungrouped
+    : contact.groups.some((name) => covered.has(normalizeGroupName(name))))
+}
+
+/**
+ * The selection after a click on a row. A plain click shows that group alone, or
+ * every contact again when it was the only one shown; with `toggle` (Shift or ⌘)
+ * exactly the clicked group is added or removed, never a range. All clears it.
+ */
+export function pickGroup(selected: readonly string[], id: string, toggle = false): string[] {
+  if (id === ALL) return []
+  if (toggle) return selected.includes(id) ? selected.filter((entry) => entry !== id) : [...selected, id]
+  return selected.length === 1 && selected[0] === id ? [] : [id]
+}
+
+/**
+ * A filter saved before 17 Nov listed the hidden groups instead: every listed
+ * group that was not hidden becomes selected, with No group unless it was
+ * hidden. Hiding a group hid its subgroups, and a selected group covers them,
+ * so only main groups are carried over. Hiding nothing shows everything.
+ */
+export function selectionFromHidden(tree: readonly GroupNode[], hiddenGroups: readonly string[], hideUngrouped: boolean): string[] {
+  const hidden = new Set(hiddenGroups.map(normalizeGroupName))
+  const rows = tree.filter((node) => node.id !== ALL && !node.parent)
+  const shown = (node: GroupNode): boolean => node.id === UNCATEGORIZED ? !hideUngrouped : !hidden.has(normalizeGroupName(node.id))
+  return rows.every(shown) ? [] : rows.filter(shown).map((node) => node.id)
 }
 
 /** Every group name in use, for the chip editors. */
