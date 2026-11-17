@@ -1,3 +1,4 @@
+import type { AddressPlace } from '@valley/plugin-sdk'
 import type {
   Contact,
   ContactMethod,
@@ -158,6 +159,62 @@ function addressText(entry: VCardProperty): string {
   return [street, extended, pobox, [code, locality].filter(Boolean).join(' '), region, country].map((part) => clean(part)).filter(Boolean).join(', ')
 }
 
+const GEO_URI = /^geo:(-?\d{1,2}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)/i
+
+/**
+ * The structured parts of an ADR written for a picked address: GEO for the
+ * point, CC (RFC 8605) for the country code, and street number and name in the
+ * RFC 9554 components after the country when present. An ADR without GEO is a
+ * plain address and has none (17 Nov).
+ */
+function addressPlace(entry: VCardProperty): AddressPlace | undefined {
+  const geo = GEO_URI.exec(param(entry, 'GEO')[0] ?? '')
+  const latitude = geo ? Number(geo[1]) : NaN
+  const longitude = geo ? Number(geo[2]) : NaN
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return undefined
+  const parts = structuredValue(entry).map((component) => clean(component.filter(Boolean).join(' ')))
+  const [, , street, city, region, postcode, country] = parts
+  const houseNumber = parts[10]
+  const streetName = parts[11]
+  const code = clean(param(entry, 'CC')[0]).toUpperCase()
+  const place: AddressPlace = { latitude, longitude }
+  if (streetName || street) place.street = streetName || street
+  if (houseNumber) place.houseNumber = houseNumber
+  if (postcode) place.postcode = postcode
+  if (city) place.city = city
+  if (region) place.region = region
+  if (country) place.country = country
+  if (/^[A-Z]{2}$/.test(code)) place.countryCode = code
+  return place
+}
+
+/** The parts of a picked place a card keeps; the point of interest's name and OSM reference stay out of the file. */
+export function storedAddressPlace(place: AddressPlace | undefined): AddressPlace | undefined {
+  if (!place) return undefined
+  const { latitude, longitude, street, houseNumber, postcode, city, region, country, countryCode } = place
+  const stored: AddressPlace = { latitude, longitude }
+  for (const [key, value] of Object.entries({ street, houseNumber, postcode, city, region, country, countryCode })) if (value) stored[key as keyof Omit<AddressPlace, 'latitude' | 'longitude' | 'osm'>] = value
+  return stored
+}
+
+/** "Avenue Gustave Eiffel 5" for the classic street component, in the place's own order. */
+function streetLine(place: AddressPlace, text: string): string {
+  if (!place.street || !place.houseNumber) return place.street ?? place.houseNumber ?? ''
+  const numberFirst = `${place.houseNumber} ${place.street}`
+  return text.includes(numberFirst) ? numberFirst : `${place.street} ${place.houseNumber}`
+}
+
+function addressProperty(method: ContactMethod): PropertyInput {
+  const text = method.value.trim()
+  const place = method.place
+  if (!place) return { name: 'ADR', params: [...typeParam(method.type), ['LABEL', text]], value: `;;${escapeText(text)};;;;` }
+  const params: Array<[string, string]> = [...typeParam(method.type), ['LABEL', text], ['GEO', `geo:${place.latitude},${place.longitude}`]]
+  if (place.countryCode) params.push(['CC', place.countryCode])
+  const classic = ['', '', streetLine(place, text), place.city ?? '', place.region ?? '', place.postcode ?? '', place.country ?? '']
+  const components = place.houseNumber && place.street ? [...classic, '', '', '', place.houseNumber, place.street, '', '', '', '', '', ''] : classic
+  return { name: 'ADR', params, value: components.map((part) => escapeText(part)).join(';') }
+}
+
 function organizations(card: VCardCard): Organization[] {
   const out: Organization[] = []
   const titles = all(card, 'TITLE')
@@ -285,7 +342,8 @@ export function contactFromCard(relPath: string, card: VCardCard): Contact {
       const value = addressText(entry)
       if (!value) return []
       const type = labelOf(card, entry)
-      return [type ? { value, type } : { value }]
+      const place = addressPlace(entry)
+      return [{ value, ...(type ? { type } : {}), ...(place ? { place } : {}) }]
     }),
     socialMedia: socials(card),
     websites: all(card, 'URL').map((entry) => clean(textValue(entry))).filter(Boolean),
@@ -344,7 +402,7 @@ function fieldProperties(contact: Contact, key: FieldKey): PropertyInput[] {
     case 'email':
       return contact[key].map((method) => ({ name: key === 'phone' ? 'TEL' : 'EMAIL', params: typeParam(method.type), value: escapeText(method.value.trim()) }))
     case 'place':
-      return contact.place.map((method) => ({ name: 'ADR', params: [...typeParam(method.type), ['LABEL', method.value.trim()]], value: `;;${escapeText(method.value.trim())};;;;` }))
+      return contact.place.map(addressProperty)
     case 'websites':
       return contact.websites.filter((url) => url.trim()).map((url) => ({ name: 'URL', value: url.trim().replace(/\r?\n/g, '') }))
     case 'socialMedia':

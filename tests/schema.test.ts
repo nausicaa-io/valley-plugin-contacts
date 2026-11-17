@@ -90,6 +90,33 @@ describe('writing vCard 4.0', () => {
   })
 })
 
+describe('picked addresses', () => {
+  const eiffel = { latitude: 48.8582602, longitude: 2.2944813, street: 'Avenue Gustave Eiffel', houseNumber: '5', postcode: '75007', city: 'Paris', region: 'Île-de-France', country: 'France', countryCode: 'FR' }
+
+  it('writes the structured parts with GEO, CC and the RFC 9554 street components, and reads them back', () => {
+    const contact = contactAt('Meadow/Orbit/Fern.vcf', { firstName: 'Fern', place: [{ value: '5 Avenue Gustave Eiffel, 75007 Paris, France', type: 'Work', place: eiffel }] })
+    const text = buildContactFile(contact)
+    const unfolded = lines(text.replace(/\r\n /g, ''))
+    expect(unfolded).toContain('ADR;TYPE=work;LABEL="5 Avenue Gustave Eiffel, 75007 Paris, France";GEO="geo:48.8582602,2.2944813";CC=FR:;;5 Avenue Gustave Eiffel;Paris;Île-de-France;75007;France;;;;5;Avenue Gustave Eiffel;;;;;;')
+    expect(parseContactFile(contact.relPath, text).place).toEqual([{ value: '5 Avenue Gustave Eiffel, 75007 Paris, France', type: 'Work', place: eiffel }])
+    expect(parseContactFile(contact.relPath, text)).toEqual(contact)
+  })
+
+  it('keeps a typed address plain and reads GEO-less ADRs without a place', () => {
+    const contact = contactAt('Meadow/Orbit/Moss.vcf', { firstName: 'Moss', place: [{ value: 'Fernweg 1, 12345 Mossville' }] })
+    const text = buildContactFile(contact)
+    expect(lines(text.replace(/\r\n /g, ''))).toContain('ADR;LABEL="Fernweg 1, 12345 Mossville":;;Fernweg 1\\, 12345 Mossville;;;;')
+    expect(parseContactFile(contact.relPath, text).place).toEqual([{ value: 'Fernweg 1, 12345 Mossville' }])
+    const imported = parseContactFile('Imports/Moss.vcf', 'BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Moss\r\nADR;GEO="geo:abc":;;Moosweg 4;Mossville;;12345;Fernland\r\nEND:VCARD\r\n')
+    expect(imported.place).toEqual([{ value: 'Moosweg 4, 12345 Mossville, Fernland' }])
+  })
+
+  it('reads a GEO ADR written elsewhere from the classic components alone', () => {
+    const contact = parseContactFile('Imports/Oak.vcf', 'BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Oak\r\nADR;GEO="geo:40.7484,-73.9856":;;350 Fifth Avenue;New York;NY;10118;USA\r\nEND:VCARD\r\n')
+    expect(contact.place).toEqual([{ value: '350 Fifth Avenue, 10118 New York, NY, USA', place: { latitude: 40.7484, longitude: -73.9856, street: '350 Fifth Avenue', postcode: '10118', city: 'New York', region: 'NY', country: 'USA' } }])
+  })
+})
+
 describe('reading other address books', () => {
   it('reads an Apple-style vCard 3.0 with labels, photos and related names', () => {
     const raw = [

@@ -200,6 +200,8 @@ const CSS = `
 .ct-rep { display:flex; flex-direction:column; gap:7px; }
 .ct-rep-row { display:flex; gap:7px; align-items:center; }
 .ct-rep-row .ct-input { flex:1; }
+/* The address row's field is the SDK AddressField; it draws its own frame, so only its footprint is set here. */
+.ct-rep-row .ct-address { flex:1; min-width:0; }
 .ct-rep-row .ct-select { flex:0 0 130px; }
 /* The relation-type picker is the shared SelectField; it owns its own frame, so
    only the row footprint is set here. */
@@ -226,7 +228,7 @@ const CSS = `
 .ct-form-compact .ct-form-grid { grid-template-columns:minmax(0,1fr); gap:10px; }
 .ct-form-compact .ct-rep-row, .ct-form-compact .ct-group-add { flex-wrap:wrap; }
 .ct-form-compact .ct-rep-row > * { min-width:0; }
-.ct-form-compact .ct-rep-row .ct-input { flex:1 1 120px; }
+.ct-form-compact .ct-rep-row .ct-input, .ct-form-compact .ct-rep-row .ct-address { flex:1 1 120px; }
 .ct-form-compact .ct-rep-row .ct-rep-type { flex:0 1 96px; }
 .ct-form-compact .ct-rep-row .ct-select { flex:1 1 110px; }
 .ct-file-page { height:100%; overflow:auto; }
