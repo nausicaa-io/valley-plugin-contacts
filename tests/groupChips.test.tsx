@@ -423,6 +423,35 @@ describe('Contact form document revisions', () => {
     expect(await mock.api.realm.readFile(contact.relPath)).toContain('NOTE:Shared fern draft')
   })
 
+  it('keeps the form live while its own save writes and keeps what was typed meanwhile as the next revision (17 Nov)', async () => {
+    const { mock, contact } = setup([])
+    await getStore(mock.api).ready()
+    const controlRef = React.createRef<ContactFormHandle>()
+    const view = render(<ContactForm contact={contact} controlRef={controlRef} />)
+    await screen.findByDisplayValue('Original note')
+    const [, , provider] = vi.mocked(mock.api.realm.editors.registerDocument).mock.calls[0]
+    const form = view.container.querySelector<HTMLElement>('.ct-form')!
+    fireEvent.change(screen.getByDisplayValue('Original note'), { target: { value: 'First line' } })
+    const prepare = provider.prepare.bind(provider)
+    const seen: boolean[] = []
+    provider.prepare = async (expected, request) => {
+      const lease = await prepare(expected, request)
+      seen.push(form.inert)
+      // Typing goes on while the own write is fenced: shown at once, saved by the next write.
+      fireEvent.change(screen.getByDisplayValue('First line'), { target: { value: 'First line, then more' } })
+      return lease
+    }
+    // The lease is released after the save resolves; wait for it inside act.
+    await act(async () => { await controlRef.current!.save(); await new Promise(resolve => setTimeout(resolve, 20)) })
+    expect(seen).toEqual([false])
+    expect(screen.getByDisplayValue('First line, then more')).toBeTruthy()
+    expect(await mock.api.realm.readFile(contact.relPath)).toContain('NOTE:First line')
+    expect(provider.getSnapshot()).toMatchObject({ dirty: true })
+    provider.prepare = prepare
+    await act(async () => { await controlRef.current!.save(); await new Promise(resolve => setTimeout(resolve, 20)) })
+    expect(await mock.api.realm.readFile(contact.relPath)).toContain('NOTE:First line\\, then more')
+  })
+
   it('loads editor-owned fields and refuses a direct SDK overwrite of its dirty draft', async () => {
     const { mock, contact } = setup([])
     await getStore(mock.api).ready()

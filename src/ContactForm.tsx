@@ -61,6 +61,9 @@ interface ContactDraft {
   listeners: Set<() => void>
   identity: string
   fences: number
+  /** Fences raised for this form's own save: typing goes on, into `pending`, and lands when the save releases (17 Nov). */
+  ownFences: number
+  pending: Map<string, unknown>
   mounts: Set<string>
   owners: Map<string, { view: MountedPluginView } | { path: string; instanceId: string }>
   ownerMountId?: string | null
@@ -70,7 +73,7 @@ function contactDraft(api: ValleyPluginApi, key: string): ContactDraft {
   const drafts = api.runtime.getOrCreate('contacts.formDrafts', () => new Map<string, ContactDraft>())
   let draft = drafts.get(key)
   if (!draft) {
-    draft = { fields: new Map(), listeners: new Set(), identity: crypto.randomUUID(), fences: 0, mounts: new Set(), owners: new Map() }
+    draft = { fields: new Map(), listeners: new Set(), identity: crypto.randomUUID(), fences: 0, ownFences: 0, pending: new Map(), mounts: new Set(), owners: new Map() }
     drafts.set(key, draft)
   }
   return draft
@@ -81,6 +84,7 @@ function useContactField<T>(api: ValleyPluginApi, key: string, field: string, in
   const initialRef = React.useRef(initial)
   initialRef.current = initial
   const read = React.useCallback((): T => {
+    if (draft.pending.has(field)) return draft.pending.get(field) as T
     if (!draft.fields.has(field)) {
       const seed = initialRef.current
       draft.fields.set(field, typeof seed === 'function' ? (seed as () => T)() : seed)
@@ -97,8 +101,16 @@ function useContactField<T>(api: ValleyPluginApi, key: string, field: string, in
   )
   const setValue = React.useCallback((next: React.SetStateAction<T>) => {
     if (ownerId && key !== '__new__' && !draft.mounts.has(ownerId)) return
-    if (draft.fences && !DRAFT_STATE.has(field)) return
-    draft.fields.set(field, typeof next === 'function' ? (next as (previous: T) => T)(read()) : next)
+    const value = typeof next === 'function' ? (next as (previous: T) => T)(read()) : next
+    if (draft.fences && !DRAFT_STATE.has(field)) {
+      // A foreign preparation holds the draft still; during this form's own save the edit waits for the release.
+      if (draft.fences !== draft.ownFences) return
+      draft.pending.set(field, value)
+      if (draft.ownerMountId === undefined || draft.ownerMountId !== null && !draft.mounts.has(draft.ownerMountId)) draft.ownerMountId = ownerId ?? null
+      for (const listener of draft.listeners) listener()
+      return
+    }
+    draft.fields.set(field, value)
     if (!DRAFT_STATE.has(field)) {
       if (draft.ownerMountId === undefined || draft.ownerMountId !== null && !draft.mounts.has(draft.ownerMountId)) draft.ownerMountId = ownerId ?? null
       draft.fields.set(`changed:${field}`, true)
@@ -141,12 +153,20 @@ function registerContactEditor(owner: ValleyPluginApi, path: string, instanceId:
       const observed = snapshot()
       if (!active || observed.revision !== expected || observed.dirty && !request.ownSave || observed.readiness !== 'ready' && !(request.ownSave && observed.readiness === 'saving')) throw new Error('The contact draft changed before preparation')
       draft.fences++
+      if (request.ownSave) draft.ownFences++
       for (const listener of draft.listeners) listener()
       let released = false
       return { validate: snapshot, release: () => {
         if (released) return
         released = true
         draft.fences--
+        if (request.ownSave) draft.ownFences--
+        if (!draft.fences && draft.pending.size) {
+          // What was typed during the save is the next revision: dirty again, so autosave writes it next.
+          for (const [field, value] of draft.pending) { draft.fields.set(field, value); draft.fields.set(`changed:${field}`, true) }
+          draft.pending.clear()
+          draft.fields.set('revision', ((draft.fields.get('revision') as number | undefined) ?? 0) + 1)
+        }
         for (const listener of draft.listeners) listener()
       } }
     }
@@ -199,7 +219,32 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
   const [prepared, setPrepared] = React.useState(false)
   React.useEffect(() => {
     const draft = contactDraft(api, draftKey)
-    const listener = () => { setPrepared(draft.fences > 0); if (form.current) form.current.inert = draft.fences > 0 }
+    // Only a foreign preparation (a rename, a command from elsewhere) makes the form inert; its own autosave never
+    // does, so typing is not interrupted. When the form comes back, focus and selection return where they were.
+    let held: { element: HTMLElement; start: number | null; end: number | null; direction: 'forward' | 'backward' | 'none' | null } | null = null
+    const listener = () => {
+      setPrepared(draft.fences > 0)
+      const element = form.current
+      if (!element) return
+      const inert = draft.fences > draft.ownFences
+      if (inert === element.inert) return
+      if (inert) {
+        const active = element.ownerDocument.activeElement
+        held = active instanceof HTMLElement && element.contains(active)
+          ? { element: active, ...(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ? { start: active.selectionStart, end: active.selectionEnd, direction: active.selectionDirection } : { start: null, end: null, direction: null }) }
+          : null
+        element.inert = true
+        return
+      }
+      element.inert = false
+      const restore = held
+      held = null
+      if (!restore || !restore.element.isConnected || element.ownerDocument.activeElement !== element.ownerDocument.body && element.ownerDocument.activeElement !== null) return
+      restore.element.focus({ preventScroll: true })
+      if (restore.start !== null && (restore.element instanceof HTMLInputElement || restore.element instanceof HTMLTextAreaElement)) {
+        try { restore.element.setSelectionRange(restore.start, restore.end ?? restore.start, restore.direction ?? undefined) } catch { /* inputs without a selection API keep the caret where focus puts it */ }
+      }
+    }
     draft.listeners.add(listener)
     listener()
     return () => { draft.listeners.delete(listener) }
