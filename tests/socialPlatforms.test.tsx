@@ -163,7 +163,7 @@ describe('contact social rows', () => {
   it('edits notes in the shared note field', async () => {
     await setupWithIcons()
     const { container } = render(<ContactForm contact={null} />)
-    const notes = container.querySelector('textarea.ct-notes-editor') as HTMLTextAreaElement
+    const notes = container.querySelector('.ct-notes-editor textarea') as HTMLTextAreaElement
     expect(notes).toBeTruthy()
     expect(notes.placeholder).toBe('Notes in Markdown')
     fireEvent.change(notes, { target: { value: '**Met** at the survey' } })
