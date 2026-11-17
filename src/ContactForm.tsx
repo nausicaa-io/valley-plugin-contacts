@@ -8,7 +8,7 @@ import { RELATION_TYPES } from './types'
 import { getStore } from './store'
 import { paletteCssValue } from '@valley/plugin-sdk/palette'
 import { allGroups, contactFileBase, groupColorFor, normalizeGroupName, parentGroupName, readContactDocument, relationLabel, relationTarget, saveContact, UNTITLED_FILE_BASE } from './data'
-import { emptyContact, parseContactFile } from './schema'
+import { emptyContact, parseContactFile, storedAddressPlace } from './schema'
 import { RELATION_LABELS } from './relationGraphModel'
 import { GripVertical, Plus, X } from './icons'
 import { canonicalPlatform, iconForPlatform, resolveSocial } from './social'
@@ -581,7 +581,7 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
 
       <MethodList title={uiText('auto.77064d526523')} items={phone} setItems={setPhone} placeholder="+41 79 ..." labelPlaceholder="mobile" />
       <MethodList title={uiText('auto.84add5b29527')} items={email} setItems={setEmail} placeholder={uiText('auto.9703026304af')} labelPlaceholder="work" />
-      <MethodList title={uiText('auto.d70f93df5e8f')} items={place} setItems={setPlace} placeholder={uiText('auto.4b4fa9d8f179')} labelPlaceholder="home" />
+      <PlaceList api={api} title={uiText('auto.d70f93df5e8f')} items={place} setItems={setPlace} placeholder={uiText('auto.4b4fa9d8f179')} labelPlaceholder="home" />
 
       <div className="ct-rep">
         <div className="ct-form-section-title">{uiText('auto.519255ae1f74')}</div>
@@ -869,6 +869,42 @@ function Field({ label, full, children }: { label: string; full?: boolean; child
     <div className={`ct-form-field${full ? ' full' : ''}`}>
       <label>{label}</label>
       {children}
+    </div>
+  )
+}
+
+/**
+ * Addresses through the SDK AddressField: OpenStreetMap suggestions while typing,
+ * free text still allowed. A picked suggestion keeps its structured parts, which
+ * the card stores in ADR; typed text stays a plain address (17 Nov).
+ */
+function PlaceList({ api, title, items, setItems, placeholder, labelPlaceholder }: {
+  api: ValleyPluginApi
+  title: string
+  items: ContactMethod[]
+  setItems: (next: ContactMethod[]) => void
+  placeholder: string
+  labelPlaceholder: string
+}): ReactElement {
+  const { AddressField } = api.ui.settings
+  return (
+    <div className="ct-rep">
+      <div className="ct-form-section-title">{title}</div>
+      {items.map((m, i) => (
+        <div className="ct-rep-row" key={i}>
+          <AddressField className="ct-address" ariaLabel={title} placeholder={placeholder}
+            value={m.place ? { text: m.value, place: m.place } : m.value}
+            onChange={(next) => {
+              const { place: _previous, ...rest } = m
+              const stored = storedAddressPlace(next.place)
+              setItems(replace(items, i, stored ? { ...rest, value: next.text, place: stored } : { ...rest, value: next.text }))
+            }} />
+          <input className="ct-input ct-rep-type" placeholder={labelPlaceholder} value={m.type ?? ''}
+            onChange={(e) => setItems(replace(items, i, { ...m, type: val(e) }))} />
+          <button className="ct-rep-del" onClick={() => setItems(remove(items, i))}><X /></button>
+        </div>
+      ))}
+      <button className="ct-rep-add" onClick={() => setItems([...items, { value: '' }])}><Plus /> {uiText('auto.61cc55aa0453')}{' '}{title.toLowerCase()}</button>
     </div>
   )
 }

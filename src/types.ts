@@ -1,3 +1,4 @@
+import type { AddressPlace } from '@valley/plugin-sdk'
 /** Relation edge kinds — describes how two contacts relate (colors graph edges). */
 export const RELATION_TYPES = [
   'family',
@@ -26,6 +27,8 @@ export interface Relation {
 export interface ContactMethod {
   value: string
   type?: string
+  /** An address picked from a suggestion: its structured parts, written to the ADR components with GEO and CC (17 Nov). */
+  place?: AddressPlace
 }
 
 /** A workplace / affiliation. */
