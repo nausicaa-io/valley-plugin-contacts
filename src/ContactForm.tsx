@@ -671,11 +671,12 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
 }
 
 /**
- * The card's Markdown notes in the host note editor (syntax highlighting,
- * `[[wikilink]]` completion, its own Source/Reading switch, vim mode), tall
- * enough to write in and growing with its text. Mod-Enter saves.
+ * The card's Markdown notes in the SDK's Markdown box: drawn in this page, so it
+ * scrolls with the form, with the formatting toolbar, `[[wikilink]]`
+ * completion and a Markdown switch. It grows with its text; Mod-Enter saves.
+ * The value is the NOTE text as written: the box never rewrites it.
  */
-function ContactNotesField({ valleyReady, note, sourcePath, onChange, onSave }: {
+function ContactNotesField({ valleyReady, note, onChange, onSave }: {
   valleyReady: boolean
   note: string
   sourcePath: string | undefined
@@ -683,26 +684,32 @@ function ContactNotesField({ valleyReady, note, sourcePath, onChange, onSave }: 
   onSave: () => void
 }): ReactElement {
   const words = note.trim() ? note.trim().split(/\s+/).length : 0
+  const MarkdownField = valleyReady ? runtimeApi.ui.settings.MarkdownField : undefined
   return (
     <div className="ct-rep ct-notes">
       <div className="ct-form-section-title">{uiText('auto.70440046a3dc')}</div>
-      {valleyReady ? (
-        <runtimeApi.ui.NoteInput
+      {MarkdownField ? (
+        <MarkdownField
           className="ct-notes-editor"
           value={note}
           onChange={onChange}
           onSave={onSave}
-          context={{ sourcePath }}
+          ariaLabel={uiText('auto.70440046a3dc')}
           minHeight={180}
+          maxHeight={560}
           placeholder={uiText('contacts.notes.placeholder')}
+          hint={uiText('contacts.notes.hint')}
+          wordCount={(count) => uiText('contacts.notes.words', { count })}
         />
       ) : (
         <div className="ct-notes-editor note-input-editor" style={{ minHeight: 180 }} />
       )}
-      <div className="ct-notes-foot">
-        <span>{uiText('contacts.notes.hint')}</span>
-        <span>{uiText('contacts.notes.words', { count: words })}</span>
-      </div>
+      {!MarkdownField && (
+        <div className="ct-notes-foot">
+          <span>{uiText('contacts.notes.hint')}</span>
+          <span>{uiText('contacts.notes.words', { count: words })}</span>
+        </div>
+      )}
     </div>
   )
 }

@@ -56,7 +56,7 @@ describe('exact mounted Contact file actions', () => {
     const fixture = setup(), rendered = render(<ContactFileView relPath={path} mountedView={mountedView} />)
     await fixture.ready(); await fixture.editing()
     await fixture.invoke({ type: 'patch', fields: { firstName: 'Bäume', middleName: 'Canopy', lastName: 'Forest', nickname: 'Birch', birthdate: '2000-06-21', profession: 'Botanist', cover: 'assets/cover.png', fileName: 'Fern', note: 'Raw **Markdown**' } })
-    expect(rendered.container.querySelector('textarea.ct-notes-editor')).toHaveValue('Raw **Markdown**')
+    expect(rendered.container.querySelector('.ct-notes-editor textarea')).toHaveValue('Raw **Markdown**')
     expect((await fixture.inspect()).form).toMatchObject({ firstName: 'Bäume', middleName: 'Canopy', lastName: 'Forest', nickname: 'Birch', birthdate: '2000-06-21', profession: 'Botanist', cover: 'assets/cover.png', fileName: 'Fern', note: 'Raw **Markdown**' })
     const fields: Record<ContactCollection, Record<string, string>> = { phone: { value: '+41 456', type: 'work' }, email: { value: 'birch@example.test', type: 'work' }, place: { value: 'Basel', type: 'home' }, organization: { name: 'Valley', title: 'Engineer', dept: 'Forest' }, social: { platform: 'github', handle: 'birch' }, website: { value: 'https://example.com/birch' }, relation: { toName: 'Moss', type: 'work', role: 'colleague' } }
     for (const collection of Object.keys(fields) as ContactCollection[]) {
@@ -129,7 +129,7 @@ describe('exact mounted Contact file actions', () => {
     await act(async () => getStore(fixture.mock.api).ready()); await screen.findAllByText('Original'); await waitFor(async () => expect((await fixture.inspect()).reader?.documentRevision).toBeTypeOf('string'))
     await expect(fixture.invoke({ type: 'mode', value: 'editing' }, 'control', { validateBeforeRun: async () => false })).rejects.toMatchObject({ code: 'PERMISSION_DENIED', outcome: 'not-applied' })
     await fixture.editing(); const old = await fixture.inspect()
-    await fixture.invoke({ type: 'patch', fields: { note: 'Retained exact owner draft' } }); expect(rendered.container.querySelectorAll('textarea.ct-notes-editor')[1]).toHaveValue('Retained exact owner draft')
+    await fixture.invoke({ type: 'patch', fields: { note: 'Retained exact owner draft' } }); expect(rendered.container.querySelectorAll('.ct-notes-editor textarea')[1]).toHaveValue('Retained exact owner draft')
     await expect(fixture.invoke({ type: 'patch', fields: { note: 'Alias overwrite' } }, 'control', {}, { mountId: other.mountId, generation: 1 })).rejects.toMatchObject({ code: 'CONTROL_UNAVAILABLE', outcome: 'not-applied' })
     await expect(fixture.invoke({ type: 'flush' }, 'save', {}, target, old.revision)).rejects.toMatchObject({ code: 'REVISION_CONFLICT' })
     vi.mocked(fixture.mock.api.realm.editors.save).mockRejectedValueOnce(new Error('Lost save acknowledgement'))

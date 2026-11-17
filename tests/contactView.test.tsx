@@ -30,8 +30,8 @@ describe('contact reader and full editor', () => {
     const view = render(<><ContactFileView relPath={path} mountedView={first} /><ContactFileView relPath={path} mountedView={second} /></>)
     await screen.findAllByText('Original')
     await act(async () => { details.invoke!({ filePath: path, selectedItemIds: ['view'] }, 'view', 'editing') })
-    await waitFor(() => expect(view.container.querySelectorAll('textarea.ct-notes-editor')).toHaveLength(2))
-    const notes = view.container.querySelectorAll('textarea.ct-notes-editor')
+    await waitFor(() => expect(view.container.querySelectorAll('.ct-notes-editor textarea')).toHaveLength(2))
+    const notes = view.container.querySelectorAll('.ct-notes-editor textarea')
     fireEvent.change(notes[0], { target: { value: 'Shared mounted fern draft' } })
     expect(notes[1]).toHaveValue('Shared mounted fern draft')
     await expect(mock.api.realm.writeFile(path, 'Overwrite')).rejects.toMatchObject({ code: 'DIRTY_EDITOR' })
@@ -48,7 +48,7 @@ describe('contact reader and full editor', () => {
     await screen.findByText('Original')
     fireEvent.keyDown(window, { key: 'e', metaKey: true })
     await waitFor(() => expect(container.querySelector('.ct-form')).toBeTruthy())
-    const notes = container.querySelector('textarea.ct-notes-editor')!
+    const notes = container.querySelector('.ct-notes-editor textarea')!
     fireEvent.change(notes, { target: { value: 'Edited in the full contact form' } })
     fireEvent.keyDown(window, { key: 'e', metaKey: true })
     expect(container.querySelector('.ct-form')!.parentElement).toHaveAttribute('hidden')
