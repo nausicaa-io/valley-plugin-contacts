@@ -399,6 +399,108 @@ describe('Contact form document revisions', () => {
     expect(await mock.api.realm.readFile(contact.relPath)).toContain('NOTE:First line\\, then more')
   })
 
+  it('releases its own save fence when the release never arrives and the view closed mid-save, and the next form saves (18 Nov)', async () => {
+    const { mock, contact } = setup([])
+    await getStore(mock.api).ready()
+    const view = render(<ContactForm contact={contact} autosave />)
+    await screen.findByDisplayValue('Original note')
+    const [, , provider] = vi.mocked(mock.api.realm.editors.registerDocument).mock.calls[0]
+    const prepare = provider.prepare.bind(provider)
+    let entered!: () => void, proceed!: () => void
+    const inSave = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { proceed = resolve })
+    provider.prepare = async (expected, request) => {
+      const lease = await prepare(expected, request)
+      entered()
+      await gate
+      // The host's release is lost: the lease is never released from outside.
+      return { validate: lease.validate, release: () => undefined }
+    }
+    fireEvent.change(screen.getByDisplayValue('Original note'), { target: { value: 'First line' } })
+    await act(async () => { await inSave })
+    fireEvent.change(screen.getByDisplayValue('First line'), { target: { value: 'First line, typed during the save' } })
+    view.unmount()
+    await act(async () => { proceed() })
+    await waitFor(async () => expect(await mock.api.realm.readFile(contact.relPath)).toContain('NOTE:First line\\, typed during the save'), { timeout: 3000 })
+    provider.prepare = prepare
+    render(<ContactForm contact={contact} autosave />)
+    const field = await screen.findByDisplayValue('First line, typed during the save')
+    fireEvent.change(field, { target: { value: 'Reopened and typed' } })
+    await waitFor(async () => expect(await mock.api.realm.readFile(contact.relPath)).toContain('NOTE:Reopened and typed'), { timeout: 3000 })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('saves typing still waiting for the autosave when its view closes (18 Nov)', async () => {
+    const { mock, contact } = setup([])
+    await getStore(mock.api).ready()
+    const view = render(<ContactForm contact={contact} autosave />)
+    fireEvent.change(await screen.findByDisplayValue('Original note'), { target: { value: 'Typed, then the tab closed' } })
+    view.unmount()
+    await waitFor(async () => expect(await mock.api.realm.readFile(contact.relPath)).toContain('NOTE:Typed\\, then the tab closed'), { timeout: 3000 })
+  })
+
+  it('keeps what was typed when its own save is rejected mid-burst, shows the failure and saves it with the retry (18 Nov)', async () => {
+    const { mock, contact } = setup([])
+    await getStore(mock.api).ready()
+    render(<ContactForm contact={contact} autosave />)
+    await screen.findByDisplayValue('Original note')
+    const [, instanceId, provider] = vi.mocked(mock.api.realm.editors.registerDocument).mock.calls[0]
+    const saveDocument = vi.mocked(mock.api.realm.editors.saveDocument)
+    saveDocument.mockImplementationOnce(async (_path, _id, _content, _baseline, revision) => {
+      // The host fences the draft for this own save, typing goes on, then the write fails and no release arrives.
+      await provider.prepare(revision, { operationId: 'op', fenceId: 'fence', deadline: Date.now() + 30_000, ownSave: true })
+      fireEvent.change(screen.getByDisplayValue('Draft one'), { target: { value: 'Draft one, then two' } })
+      throw new Error('Disk unavailable')
+    })
+    fireEvent.change(screen.getByDisplayValue('Original note'), { target: { value: 'Draft one' } })
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Disk unavailable'), { timeout: 3000 })
+    expect(screen.getByDisplayValue('Draft one, then two')).toBeTruthy()
+    await waitFor(async () => expect(await mock.api.realm.readFile(contact.relPath)).toContain('NOTE:Draft one\\, then two'), { timeout: 3000 })
+    expect(saveDocument).toHaveBeenLastCalledWith(contact.relPath, instanceId, expect.stringContaining('NOTE:Draft one\\, then two'), expect.any(Object), expect.any(String))
+    expect(provider.getSnapshot()).toMatchObject({ dirty: false, readiness: 'ready' })
+  })
+
+  it('goes on saving from the other copy when one copy closes during a save whose release is lost (18 Nov)', async () => {
+    const { mock, contact } = setup([])
+    await getStore(mock.api).ready()
+    const first = render(<ContactForm contact={contact} autosave />)
+    const second = render(<ContactForm contact={contact} autosave />)
+    await waitFor(() => expect(screen.getAllByDisplayValue('Original note')).toHaveLength(2))
+    const providers = vi.mocked(mock.api.realm.editors.registerDocument).mock.calls.map(([, , provider]) => provider)
+    const restore = providers.map(provider => {
+      const prepare = provider.prepare.bind(provider)
+      provider.prepare = async (expected, request) => { const lease = await prepare(expected, request); return { validate: lease.validate, release: () => undefined } }
+      return () => { provider.prepare = prepare }
+    })
+    fireEvent.change(within(first.container).getByDisplayValue('Original note'), { target: { value: 'From the first copy' } })
+    await waitFor(async () => expect(await mock.api.realm.readFile(contact.relPath)).toContain('NOTE:From the first copy'), { timeout: 3000 })
+    first.unmount()
+    restore.forEach(undo => undo())
+    fireEvent.change(within(second.container).getByDisplayValue('From the first copy'), { target: { value: 'Then the second copy' } })
+    await waitFor(async () => expect(await mock.api.realm.readFile(contact.relPath)).toContain('NOTE:Then the second copy'), { timeout: 3000 })
+    expect(second.container.querySelector<HTMLElement>('.ct-form')!.inert).toBe(false)
+  })
+
+  it('holds the form for a foreign preparation, gives focus back and lets go at the deadline when no release arrives (18 Nov)', async () => {
+    const { mock, contact } = setup([])
+    await getStore(mock.api).ready()
+    const view = render(<ContactForm contact={contact} autosave />)
+    const note = await screen.findByDisplayValue('Original note') as HTMLTextAreaElement
+    const [, , provider] = vi.mocked(mock.api.realm.editors.registerDocument).mock.calls[0]
+    note.focus()
+    note.setSelectionRange(3, 5)
+    const form = view.container.querySelector<HTMLElement>('.ct-form')!
+    await act(async () => { await provider.prepare((await provider.getSnapshot()).revision, { operationId: 'rename', fenceId: 'foreign', deadline: Date.now() + 50, ownSave: false }) })
+    expect(form.inert).toBe(true)
+    fireEvent.change(note, { target: { value: 'Blocked' } })
+    expect(screen.queryByDisplayValue('Blocked')).toBeNull()
+    note.blur()
+    await waitFor(() => expect(form.inert).toBe(false), { timeout: 3000 })
+    expect(document.activeElement).toBe(note)
+    expect([note.selectionStart, note.selectionEnd]).toEqual([3, 5])
+    fireEvent.change(note, { target: { value: 'After the deadline' } })
+    await waitFor(async () => expect(await mock.api.realm.readFile(contact.relPath)).toContain('NOTE:After the deadline'), { timeout: 3000 })
+  })
+
   it('loads editor-owned fields and refuses a direct SDK overwrite of its dirty draft', async () => {
     const { mock, contact } = setup([])
     await getStore(mock.api).ready()

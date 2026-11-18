@@ -64,16 +64,35 @@ interface ContactDraft {
   /** Fences raised for this form's own save: typing goes on, into `pending`, and lands when the save releases (17 Nov). */
   ownFences: number
   pending: Map<string, unknown>
+  /** Leases this draft gave the host, until released (by the host, at the host's deadline, or when this form's own save settles). */
+  leases: Set<DraftLease>
+  /** Set by an autosaving form: its last editor saves what is left before it lets go. */
+  autosave?: boolean
   mounts: Set<string>
   owners: Map<string, { view: MountedPluginView } | { path: string; instanceId: string }>
   ownerMountId?: string | null
+}
+
+interface DraftLease { own: boolean; fenceId: string; release(): void }
+
+/** After the host's fence deadline a lease whose release never arrived releases itself (18 Nov). */
+const LEASE_GRACE_MS = 1000
+
+/** Releases the fences of this draft's own saves, with every copy's lease in them: once a save has settled, the host has nothing of it left to hold. */
+function releaseOwnLeases(draft: ContactDraft): void {
+  const fences = new Set([...draft.leases].filter(lease => lease.own).map(lease => lease.fenceId))
+  for (const lease of [...draft.leases]) if (fences.has(lease.fenceId)) lease.release()
+}
+
+function notifyDraft(draft: ContactDraft): void {
+  for (const listener of [...draft.listeners]) listener()
 }
 
 function contactDraft(api: ValleyPluginApi, key: string): ContactDraft {
   const drafts = api.runtime.getOrCreate('contacts.formDrafts', () => new Map<string, ContactDraft>())
   let draft = drafts.get(key)
   if (!draft) {
-    draft = { fields: new Map(), listeners: new Set(), identity: crypto.randomUUID(), fences: 0, ownFences: 0, pending: new Map(), mounts: new Set(), owners: new Map() }
+    draft = { fields: new Map(), listeners: new Set(), identity: crypto.randomUUID(), fences: 0, ownFences: 0, pending: new Map(), leases: new Set(), mounts: new Set(), owners: new Map() }
     drafts.set(key, draft)
   }
   return draft
@@ -156,9 +175,13 @@ function registerContactEditor(owner: ValleyPluginApi, path: string, instanceId:
       if (request.ownSave) draft.ownFences++
       for (const listener of draft.listeners) listener()
       let released = false
-      return { validate: snapshot, release: () => {
+      // A release that never arrives (the view closed during the save, a lost message) must not hold the draft for
+      // the rest of the session: nothing typed would be saved again (18 Nov).
+      const lease: DraftLease = { own: request.ownSave, fenceId: request.fenceId, release: () => {
         if (released) return
         released = true
+        clearTimeout(expiry)
+        draft.leases.delete(lease)
         draft.fences--
         if (request.ownSave) draft.ownFences--
         if (!draft.fences && draft.pending.size) {
@@ -167,12 +190,107 @@ function registerContactEditor(owner: ValleyPluginApi, path: string, instanceId:
           draft.pending.clear()
           draft.fields.set('revision', ((draft.fields.get('revision') as number | undefined) ?? 0) + 1)
         }
-        for (const listener of draft.listeners) listener()
+        notifyDraft(draft)
       } }
+      const expiry = setTimeout(lease.release, Math.max(0, request.deadline - Date.now()) + LEASE_GRACE_MS)
+      draft.leases.add(lease)
+      return { validate: snapshot, release: lease.release }
     }
   })
-  return () => { active = false; draft.mounts.delete(instanceId); draft.owners.delete(instanceId); off() }
+  return () => {
+    let finished = false
+    const finish = (): void => { if (finished) return; finished = true; active = false; draft.mounts.delete(instanceId); draft.owners.delete(instanceId); off() }
+    const unsaved = draft.pending.size > 0 || draft.fences > 0 || (draft.fields.get('revision') ?? 0) !== (draft.fields.get('committedRevision') ?? 0)
+    // The last copy of an autosaving form saves what is left, through its still registered editor, before it lets go.
+    if (!draft.autosave || draft.mounts.size !== 1 || !unsaved) { finish(); return }
+    void flushContactDraft(owner, path, draft, target).finally(finish)
+  }
 }
+
+interface DraftValues {
+  firstName: string; middleName: string; lastName: string; nickname: string; birthdate: string; profession: string; cover: string; photo: string
+  groups: string[]; phone: ContactMethod[]; email: ContactMethod[]; place: ContactMethod[]; organization: Organization[]; social: SocialRow[]
+  websites: string[]; relations: RelDraft[]; note: string
+}
+
+/** The card a draft's values describe, as the form saves it. */
+function contactFromDraft(base: Contact, values: DraftValues, dateFormat: string, contacts: Contact[]): Contact {
+  return {
+    ...base,
+    firstName: values.firstName.trim(),
+    middleName: values.middleName.trim(),
+    lastName: values.lastName.trim(),
+    nickname: values.nickname.trim(),
+    birthdate: parseContactDateInput(values.birthdate, dateFormat),
+    profession: values.profession.trim(),
+    // A new photo is embedded in the card and replaces a linked cover image.
+    photo: values.photo,
+    cover: values.photo !== base.photo ? '' : values.cover.trim(),
+    groups: values.groups,
+    phone: values.phone.filter((m) => m.value.trim()),
+    email: values.email.filter((m) => m.value.trim()),
+    place: values.place.filter((m) => m.value.trim()),
+    organization: values.organization.filter((o) => o.name || o.title || o.dept),
+    socialMedia: values.social
+      .map((row) => row.value)
+      .filter((s) => s.platform || s.handle || s.url)
+      .map((s) => ({ ...s, platform: s.platform ? canonicalPlatform(s.platform) : s.platform })),
+    websites: values.websites.filter((w) => w.trim()),
+    relations: values.relations
+      .filter((r) => r.toName.trim())
+      .map((r) => ({ to: r.ref && r.toName === r.label ? r.ref : relationTarget(r.toName, contacts), type: r.type, role: r.role.trim() || undefined })),
+    note: values.note
+  }
+}
+
+/**
+ * Saves a draft whose form is gone (its view closed while typing was still waiting for the autosave or for its own
+ * save): waits until no fence holds it, then writes its values through the editor that is still registered. A save
+ * that cannot be written leaves the draft dirty with its error, shown by the next form of this contact.
+ */
+async function flushContactDraft(owner: ValleyPluginApi, path: string, draft: ContactDraft, target: { view: MountedPluginView } | { path: string; instanceId: string }): Promise<void> {
+  while (draft.fences > 0 || draft.fields.get('saving')) {
+    await new Promise<void>(resolve => {
+      const listener = (): void => { if (draft.fences > 0 || draft.fields.get('saving')) return; draft.listeners.delete(listener); resolve() }
+      draft.listeners.add(listener)
+    })
+  }
+  const fields = draft.fields
+  const revision = (fields.get('revision') as number | undefined) ?? 0
+  const source = fields.get('sourceContact') as Contact | undefined
+  const expected = fields.get('expectedDocument') as TextDocumentRead | undefined
+  if (!fields.get('ready') || !source || !expected || revision === ((fields.get('committedRevision') as number | undefined) ?? 0)) return
+  const dateFormat = owner.getState().dateFormat
+  const contacts = getStore(owner).getSnapshot().contacts
+  const value = <T,>(key: string, fallback: T): T => fields.has(key) ? fields.get(key) as T : fallback
+  const values: DraftValues = {
+    firstName: value('firstName', source.firstName), middleName: value('middleName', source.middleName), lastName: value('lastName', source.lastName), nickname: value('nickname', source.nickname),
+    birthdate: value('birthdate', formatContactDate(source.birthdate, dateFormat)), profession: value('profession', source.profession), cover: value('cover', source.cover), photo: value('photo', source.photo),
+    groups: value('groups', source.groups), phone: value('phone', source.phone), email: value('email', source.email), place: value('place', source.place), organization: value('organization', source.organization),
+    social: value('social', source.socialMedia.map(row => newSocialRow(row))), websites: value('websites', source.websites), relations: value('relations', relationDrafts(source, contacts)), note: value('note', source.note)
+  }
+  const next = contactFromDraft(source, values, dateFormat, contacts)
+  fields.set('saving', true)
+  notifyDraft(draft)
+  try {
+    // The file keeps its name here; a rename waits for the next save from an open form.
+    const saved = await saveContact(next, { previous: source, fileName: contactPathBase(path), document: expected }, owner, { ...target, revision: `${draft.identity}:${revision}`, committed: () => fields.set('committedRevision', revision) })
+    if (!saved || saved.editorConflict) throw new Error(uiText('contacts.error.changed'))
+    fields.set('committedRevision', revision)
+    fields.set('expectedDocument', saved.document ?? undefined)
+    fields.set('sourceContact', { ...next, displayName: source.displayName })
+    fields.set('error', '')
+  } catch (reason) {
+    fields.set('error', reason instanceof Error ? reason.message : uiText('contacts.error.save'))
+  } finally {
+    fields.set('saving', false)
+    fields.set('savedRevision', revision)
+    releaseOwnLeases(draft)
+    notifyDraft(draft)
+  }
+}
+
+const contactPathBase = (path: string): string => (path.split('/').pop() ?? path).replace(/\.vcf$/i, '')
 
 export const registerContactFileEditor = (owner: ValleyPluginApi, view: MountedPluginView): (() => void) => registerContactEditor(owner, view.filePath, view.mountId, { view }, provider => owner.realm.editors.register(view, provider))
 
@@ -215,6 +333,7 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
     if (mountedKey || !contact?.relPath) return
     return registerContactEditor(api, contact.relPath, instanceId, { path: contact.relPath, instanceId }, provider => api.realm.editors.registerDocument(contact.relPath, instanceId, provider))
   }, [api, contact?.relPath, instanceId, mountedKey])
+  if (autosave) contactDraft(api, draftKey).autosave = true
   const form = React.useRef<HTMLDivElement>(null)
   const [prepared, setPrepared] = React.useState(false)
   React.useEffect(() => {
@@ -374,32 +493,7 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
     const target = (draft.fields.get('revision') as number | undefined) ?? 0
     setSaving(true)
     setError('')
-    const next: Contact = {
-      ...base,
-      firstName: firstName.trim(),
-      middleName: middleName.trim(),
-      lastName: lastName.trim(),
-      nickname: nickname.trim(),
-      birthdate: parseContactDateInput(birthdate, dateFormat),
-      profession: profession.trim(),
-      // A new photo is embedded in the card and replaces a linked cover image.
-      photo,
-      cover: photo !== base.photo ? '' : cover.trim(),
-      groups,
-      phone: phone.filter((m) => m.value.trim()),
-      email: email.filter((m) => m.value.trim()),
-      place: place.filter((m) => m.value.trim()),
-      organization: organization.filter((o) => o.name || o.title || o.dept),
-      socialMedia: social
-        .map((row) => row.value)
-        .filter((s) => s.platform || s.handle || s.url)
-        .map((s) => ({ ...s, platform: s.platform ? canonicalPlatform(s.platform) : s.platform })),
-      websites: websites.filter((w) => w.trim()),
-      relations: relations
-        .filter((r) => r.toName.trim())
-        .map((r) => ({ to: r.ref && r.toName === r.label ? r.ref : relationTarget(r.toName, snap.contacts), type: r.type, role: r.role.trim() || undefined })),
-      note
-    }
+    const next = contactFromDraft(base, { firstName, middleName, lastName, nickname, birthdate, profession, cover, photo, groups, phone, email, place, organization, social, websites, relations, note }, dateFormat, snap.contacts)
     try {
       if (contact && !expectedDocument) throw new Error(uiText('contacts.error.changed'))
       const editor = contact?.relPath ? { ...(draft.owners.get(draft.ownerMountId ?? editorId) ?? (mountedView ? { view: mountedView } : { path: contact.relPath, instanceId })), revision: `${draft.identity}:${target}`, committed: () => setCommittedRevision(target) } : undefined
@@ -430,6 +524,8 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
       setSaving(false)
       // A failed save waits for the next edit instead of retrying the same one.
       setSavedRevision(target)
+      // The save has settled, so the host holds nothing of it any more, whether or not its release arrived.
+      releaseOwnLeases(draft)
     }
   }
 
