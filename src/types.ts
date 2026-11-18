@@ -110,4 +110,8 @@ export interface GroupNode {
   count: number
   /** A subgroup: lists indent it under its group. */
   sub?: boolean
+  /** A subgroup's group (its node id). */
+  parent?: string
+  /** The configured group's id, for a group that is in the registry or Contacts-only. */
+  key?: string
 }

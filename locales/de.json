@@ -117,8 +117,6 @@
   "contacts.field.relations": "Beziehungen",
   "contacts.field.socialMedia": "Soziale Medien",
   "contacts.field.websites": "Websites",
-  "contacts.filter.deselectAll": "Auswahl aufheben",
-  "contacts.filter.selectAll": "Alle auswählen",
   "contacts.group.all": "Alle",
   "contacts.group.deleteBlocked": "Wird noch von {{p0}} Kontakten verwendet — Gruppe zuerst leeren",
   "contacts.group.global": "Global",
@@ -214,5 +212,14 @@
   "contacts.notes.words": "{{count}} Wörter",
   "contacts.settings.showGroupsInList": "Gruppen in der Liste anzeigen",
   "contacts.settings.showGroupsInListDesc": "Die Gruppen jedes Kontakts als Tags unter dem Namen in der Seitenleiste anzeigen.",
-  "contacts.form.yearUnknown": "Jahr unbekannt"
+  "contacts.form.yearUnknown": "Jahr unbekannt",
+  "contacts.groups.allContacts": "Alle Kontakte",
+  "contacts.groups.selected": "{{p0}} ausgewählt",
+  "contacts.groups.clear": "Alle Kontakte zeigen",
+  "contacts.groups.expandAll": "Alle Gruppen ausklappen",
+  "contacts.groups.collapseAll": "Alle Gruppen einklappen",
+  "contacts.groups.expandGroup": "Untergruppen von {{p0}} einblenden",
+  "contacts.groups.collapseGroup": "Untergruppen von {{p0}} ausblenden",
+  "contacts.settings.groupsSectionFolded": "Eingeklappter Gruppenbereich",
+  "contacts.settings.collapsedGroups": "Eingeklappte Gruppen in der Seitenleiste"
 }

@@ -117,8 +117,6 @@
   "contacts.field.relations": "Relationships",
   "contacts.field.socialMedia": "Social media",
   "contacts.field.websites": "Websites",
-  "contacts.filter.deselectAll": "Deselect all",
-  "contacts.filter.selectAll": "Select all",
   "contacts.group.all": "All",
   "contacts.group.deleteBlocked": "Still used by {{p0}} contacts — empty the group to delete it",
   "contacts.group.global": "Global",
@@ -214,5 +212,14 @@
   "contacts.notes.words": "{{count}} words",
   "contacts.settings.showGroupsInList": "Show groups in the list",
   "contacts.settings.showGroupsInListDesc": "Show each contact's groups as tags under the name in the sidebar list.",
-  "contacts.form.yearUnknown": "Year unknown"
+  "contacts.form.yearUnknown": "Year unknown",
+  "contacts.groups.allContacts": "All contacts",
+  "contacts.groups.selected": "{{p0}} selected",
+  "contacts.groups.clear": "Show all contacts",
+  "contacts.groups.expandAll": "Expand all groups",
+  "contacts.groups.collapseAll": "Collapse all groups",
+  "contacts.groups.expandGroup": "Show the subgroups of {{p0}}",
+  "contacts.groups.collapseGroup": "Hide the subgroups of {{p0}}",
+  "contacts.settings.groupsSectionFolded": "Folded Groups section",
+  "contacts.settings.collapsedGroups": "Folded sidebar groups"
 }

@@ -15,6 +15,8 @@ export const LOCAL_GROUPS_KEY = 'localGroups'
 export const USE_SHARED_GROUPS_KEY = 'useSharedGroups'
 export const USE_LOCAL_GROUPS_KEY = 'useLocalGroups'
 export const SHOW_GROUPS_IN_LIST_KEY = 'showGroupsInList'
+export const GROUPS_SECTION_FOLDED_KEY = 'groupsSectionFolded'
+export const COLLAPSED_GROUPS_KEY = 'collapsedGroups'
 export const LOCAL_GROUP_LIMIT = 200
 export const LOCAL_GROUP_NAME_MAX = 60
 const LOCAL_ID = /^local-[a-z0-9]{1,32}$/
@@ -133,3 +135,28 @@ export function useShowGroupsInList(): boolean {
     () => owner.settings.get()[SHOW_GROUPS_IN_LIST_KEY] !== false
   )
 }
+
+function useSetting<T>(key: string, read: (value: unknown) => T): [T, (next: T) => void] {
+  const owner = api
+  const [shown, setShown] = React.useState<{ value: T } | null>(null)
+  const saved = React.useSyncExternalStore(
+    React.useCallback((listener: () => void) => owner.settings.subscribe(listener), [owner]),
+    () => owner.settings.get()[key]
+  )
+  const value = React.useMemo(() => read(saved), [read, saved])
+  React.useEffect(() => { setShown(null) }, [saved])
+  const set = React.useCallback((next: T): void => {
+    setShown({ value: next })
+    void owner.settings.set(key, next).catch(() => setShown(null))
+  }, [owner, key])
+  return [shown ? shown.value : value, set]
+}
+
+const readFolded = (value: unknown): boolean => value === true
+const readIds = (value: unknown): string[] => Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []
+
+/** Whether the sidebar's Groups section is folded to its title (saved, hidden setting). */
+export const useGroupsSectionFolded = (): [boolean, (folded: boolean) => void] => useSetting(GROUPS_SECTION_FOLDED_KEY, readFolded)
+
+/** Ids of the groups whose subgroups the sidebar's Groups section hides (saved, hidden setting). */
+export const useCollapsedGroups = (): [string[], (ids: string[]) => void] => useSetting(COLLAPSED_GROUPS_KEY, readIds)

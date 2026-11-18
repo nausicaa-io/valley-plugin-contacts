@@ -4,6 +4,7 @@ import { React, api } from './runtime'
 import { getStore } from './store'
 import { getContactIndex } from './indexOwner'
 import { loadContacts } from './store'
+import { selectionFromHidden } from './data'
 import { Pencil } from './icons'
 import { setContactMode } from './contactView'
 import { uiText } from './localization'
@@ -29,6 +30,13 @@ const bookmarkStateSchema = {
         }
       ]
     },
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 512
+    },
     "hiddenGroups": {
       "type": "array",
       "items": {
@@ -45,9 +53,7 @@ const bookmarkStateSchema = {
   },
   "required": [
     "v",
-    "mode",
-    "hiddenGroups",
-    "hideUngrouped"
+    "mode"
   ],
   "additionalProperties": false
 } satisfies InteropValueSchema
@@ -75,10 +81,10 @@ function snapshot(api: ValleyPluginApi, instanceId?: string): PluginSurfaceSnaps
   const current = store.getSnapshot()
   if (instanceId?.toLowerCase().endsWith('.vcf')) {
     const contact = current.contacts.find(entry => entry.relPath === instanceId)
-    return { title: contact?.displayName || instanceId.split('/').pop()!, filePath: instanceId, view: { v: 1, mode: 'detail', hiddenGroups: [], hideUngrouped: false, path: instanceId } }
+    return { title: contact?.displayName || instanceId.split('/').pop()!, filePath: instanceId, view: { v: 1, mode: 'detail', groups: [], path: instanceId } }
   }
   const contact = current.mode === 'graph' || current.mode === 'create' ? undefined : current.contacts.find((entry) => entry.relPath === current.selectedPath)
-  const view = { v: 1, mode: current.mode === 'graph' ? 'graph' : 'detail', hiddenGroups: current.hiddenGroups, hideUngrouped: current.hideUngrouped }
+  const view = { v: 1, mode: current.mode === 'graph' ? 'graph' : 'detail', groups: current.selectedGroups }
   return {
     title: uiText('manifest.name'),
     view,
@@ -105,7 +111,11 @@ async function restore(owner: ValleyPluginApi, state: PluginLinkState, _instance
     store.openContact(state.path, { reveal: !options?.background })
   } else if (state.mode === 'graph') store.showGraph()
   else store.showList()
-  store.setGroupFilter(Array.isArray(state.hiddenGroups) ? state.hiddenGroups.filter((value): value is string => typeof value === 'string') : [], state.hideUngrouped === true)
+  const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : []
+  // A view saved before 17 Nov names the hidden groups instead of the shown ones.
+  store.setGroupFilter(Array.isArray(state.groups)
+    ? strings(state.groups)
+    : selectionFromHidden(store.getSnapshot().groupTree, strings(state.hiddenGroups), state.hideUngrouped === true))
 }
 
 export function registerContactSurfaces(pluginApi: ValleyPluginApi): () => void {

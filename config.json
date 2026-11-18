@@ -223,6 +223,33 @@
           "type": "boolean"
         },
         "default": true
+      },
+      {
+        "key": "groupsSectionFolded",
+        "label": "Folded Groups section",
+        "labelKey": "contacts.settings.groupsSectionFolded",
+        "type": "custom",
+        "settingsVisible": false,
+        "schema": {
+          "type": "boolean"
+        },
+        "default": false
+      },
+      {
+        "key": "collapsedGroups",
+        "label": "Folded sidebar groups",
+        "labelKey": "contacts.settings.collapsedGroups",
+        "type": "custom",
+        "settingsVisible": false,
+        "schema": {
+          "type": "array",
+          "maxItems": 400,
+          "items": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "default": []
       }
     ]
   },

@@ -117,8 +117,6 @@
   "contacts.field.relations": "Relaciones",
   "contacts.field.socialMedia": "Redes sociales",
   "contacts.field.websites": "Websitios",
-  "contacts.filter.deselectAll": "Deseleccionar todo",
-  "contacts.filter.selectAll": "Seleccionar todo",
   "contacts.group.all": "Todo",
   "contacts.group.deleteBlocked": "Todavía lo usan {{p0}} contactos: vacía el grupo para eliminarlo",
   "contacts.group.global": "Global",
@@ -214,5 +212,14 @@
   "contacts.notes.words": "{{count}} palabras",
   "contacts.settings.showGroupsInList": "Mostrar grupos en la lista",
   "contacts.settings.showGroupsInListDesc": "Mostrar los grupos de cada contacto como etiquetas bajo el nombre en la lista lateral.",
-  "contacts.form.yearUnknown": "Año desconocido"
+  "contacts.form.yearUnknown": "Año desconocido",
+  "contacts.groups.allContacts": "Todos los contactos",
+  "contacts.groups.selected": "{{p0}} seleccionados",
+  "contacts.groups.clear": "Mostrar todos los contactos",
+  "contacts.groups.expandAll": "Expandir todos los grupos",
+  "contacts.groups.collapseAll": "Contraer todos los grupos",
+  "contacts.groups.expandGroup": "Mostrar los subgrupos de {{p0}}",
+  "contacts.groups.collapseGroup": "Ocultar los subgrupos de {{p0}}",
+  "contacts.settings.groupsSectionFolded": "Sección Grupos contraída",
+  "contacts.settings.collapsedGroups": "Grupos contraídos en la barra lateral"
 }

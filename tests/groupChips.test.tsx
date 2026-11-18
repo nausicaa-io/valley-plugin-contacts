@@ -290,59 +290,6 @@ describe('Panel group filter layout', () => {
     await act(async () => { await mock.api.settings.set('showGroupsInList', false) })
     await waitFor(() => expect(container.querySelector('.ct-tag')).toBeNull())
   })
-
-  it('uses the header group popover to filter several groups', async () => {
-    const mock = setupPanelContacts()
-    await getStore(mock.api).ready()
-    const { container } = render(React.createElement(Panel))
-    const list = container.querySelector('.ct-list') as HTMLElement
-
-    expect(container.querySelector('.ct-tree')).toBeNull()
-    const filter = screen.getByRole('button', { name: 'Groups' })
-    expect(filter).not.toHaveTextContent('3/3')
-    expect(within(list).getByText('Chanterelle')).toBeTruthy()
-    expect(within(list).getByText('Otter')).toBeTruthy()
-    expect(within(list).getByText('Badger')).toBeTruthy()
-
-    fireEvent.click(filter)
-    expect(mock.popovers).toHaveLength(1)
-    const popover = render(React.createElement(React.Fragment, null, mock.popovers[0].node))
-    expect(screen.getByRole('button', { name: 'Deselect all' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'fungi 1' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'moss 0' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'plants 1' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'No group 1' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'fungi 1' })).toHaveClass('active', 'selection-run-start')
-    expect(screen.getByRole('button', { name: 'No group 1' })).toHaveClass('active', 'selection-run-end')
-
-    fireEvent.click(screen.getByRole('button', { name: 'plants 1' }))
-    await waitFor(() => expect(within(list).queryByText('Otter')).toBeNull())
-    expect(within(list).getByText('Chanterelle')).toBeTruthy()
-    expect(within(list).getByText('Badger')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Groups' })).toHaveClass('active')
-
-    const fungi = screen.getByRole('button', { name: 'fungi 1' })
-    const moss = screen.getByRole('button', { name: 'moss 0' })
-    const plants = screen.getByRole('button', { name: 'plants 1' })
-    const noGroup = screen.getByRole('button', { name: 'No group 1' })
-    expect(fungi).toHaveClass('active', 'selection-run-start')
-    expect(fungi).not.toHaveClass('selection-run-end')
-    expect(moss).toHaveClass('active', 'selection-run-end')
-    expect(moss).not.toHaveClass('selection-run-start')
-    expect(plants).not.toHaveClass('active')
-    expect(noGroup).toHaveClass('active', 'selection-run-start', 'selection-run-end')
-
-    fireEvent.click(noGroup)
-    await waitFor(() => expect(within(list).queryByText('Badger')).toBeNull())
-    expect(within(list).getByText('Chanterelle')).toBeTruthy()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
-    await waitFor(() => expect(within(list).getByText('Otter')).toBeTruthy())
-    expect(within(list).getByText('Badger')).toBeTruthy()
-
-    fireEvent.click(within(popover.container).getByRole('button', { name: 'Group' }))
-    expect(mock.api.workspace.openSettings).toHaveBeenCalledWith('plugin:contacts#groups')
-  })
 })
 
 
