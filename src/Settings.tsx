@@ -180,7 +180,7 @@ function SocialSettings(): ReactElement {
   })
 
   return (
-    <Section>
+    <Section title={uiText('contacts.settings.section.social')}>
       <div className="settings-colorrules ct-social-settings">
         <span className="settings-toggle-text">
           <span className="settings-toggle-title">{uiText('auto.52e0b0a389f8')}</span>
@@ -464,22 +464,28 @@ function GeneralSettings(): ReactElement {
   const { RealmFolderField, Row, Section } = api.ui.settings
   const [contactsRoot, setContactsRoot] = React.useState(() => getSettings().contactsRoot)
   return (
-    <Section>
-      <Row title={uiText('auto.ecea12d8f363')} description={uiText('contacts.settings.rootDescription')}>
-        <RealmFolderField
-          value={contactsRoot}
-          onChange={setContactsRoot}
-          onCommit={(value) => void api.settings.set('contactsRoot', value)}
-          ariaLabel={uiText('auto.ecea12d8f363')}
-        />
-      </Row>
-    </Section>
+    <>
+      <Section>
+        <Row title={uiText('auto.ecea12d8f363')} description={uiText('contacts.settings.rootDescription')}>
+          <RealmFolderField
+            value={contactsRoot}
+            onChange={setContactsRoot}
+            onCommit={(value) => void api.settings.set('contactsRoot', value)}
+            ariaLabel={uiText('auto.ecea12d8f363')}
+          />
+        </Row>
+      </Section>
+      <SocialSettings />
+    </>
   )
 }
 
-/** `contacts.settings`: rendered once per manifest `settingsSections` id, and once for the main page. */
+/**
+ * `contacts.settings`: rendered once per manifest `settingsSections` id, and once for
+ * the main page, which also holds the social platforms (17 Nov). Any other id,
+ * such as the retired `social` page, shows the main page.
+ */
 export function Settings({ section }: { section?: string }): ReactElement {
-  if (section === 'social') return <SocialSettings />
   if (section === 'groups') return <GroupsSettings />
   return <GeneralSettings />
 }

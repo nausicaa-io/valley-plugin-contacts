@@ -11,6 +11,7 @@ import { contactIcon, refreshContactIcons, sanitizeContactSvg, hasContactIcon } 
 import { getSettings } from '../src/data'
 import type { SocialLink } from '../src/types'
 import { readContactIcons } from '../src/backend/icons'
+import config from '../config.json'
 
 declare const CONTACT_ICON_SVGS: Record<string, string>
 
@@ -96,9 +97,26 @@ describe('social platform registry', () => {
 })
 
 describe('social platform settings list', () => {
+  it('sits on the main Contacts page under the folder row, with Groups as the only sub-page', async () => {
+    await setupWithIcons([link('instagram', 'Instagram')])
+    expect(config.settingsSections.map((section) => section.id)).toEqual(['groups'])
+    const view = render(<Settings />)
+    const headings = [...view.container.querySelectorAll('.settings-toggle-title, .settings-label')].map((node) => node.textContent)
+    expect(headings.indexOf('Contacts folder')).toBeLessThan(headings.indexOf('Social platforms'))
+    expect(screen.getByText('Social links')).toBeInTheDocument()
+    expect(screen.getByText(/contacts-icon/)).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'New platform name' })).toBeInTheDocument()
+    view.unmount()
+    render(<Settings section="social" />)
+    expect(screen.getByRole('textbox', { name: 'New platform name' })).toBeInTheDocument()
+    cleanup()
+    await act(async () => { render(<Settings section="groups" />) })
+    expect(screen.queryByRole('textbox', { name: 'New platform name' })).toBeNull()
+  })
+
   it('reorders the registry from the keyboard and writes the new order', async () => {
     const mock = await setupWithIcons([link('instagram', 'Instagram'), link('wechat', 'WeChat'), link('vk', 'VK')])
-    render(<Settings section="social" />)
+    render(<Settings />)
 
     const grips = screen.getAllByTitle('Drag to reorder')
     expect(grips).toHaveLength(3)
@@ -111,7 +129,7 @@ describe('social platform settings list', () => {
 
   it('persists a manual SVG selection across remounts and can return to automatic matching', async () => {
     const mock = await setupWithIcons([link('custom', 'My platform')])
-    const view = render(<Settings section="social" />)
+    const view = render(<Settings />)
     fireEvent.click(screen.getByRole('button', { name: 'Choose icon for My platform' }))
     const picker = render(<>{mock.popovers[0].node}</>)
     fireEvent.change(picker.getByRole('textbox', { name: 'Search icons' }), { target: { value: 'github' } })
@@ -120,7 +138,7 @@ describe('social platform settings list', () => {
     expect(getSettings().socials[0].icon).toBe('github')
     expect(resolveSocial({ platform: 'custom' }, getSettings().socials).icon).toBe(contactIcon('github'))
     view.unmount()
-    render(<Settings section="social" />)
+    render(<Settings />)
     fireEvent.click(screen.getByRole('button', { name: 'Choose icon for My platform' }))
     const reopened = render(<>{mock.popovers[1].node}</>)
     expect(reopened.getByRole('button', { name: 'github.svg' })).toHaveAttribute('aria-pressed', 'true')
@@ -136,7 +154,7 @@ describe('social platform settings list', () => {
 
   it('keeps a manual icon chosen before adding a custom platform', async () => {
     const mock = await setupWithIcons([link('instagram', 'Instagram')])
-    render(<Settings section="social" />)
+    render(<Settings />)
     fireEvent.change(screen.getByRole('textbox', { name: 'New platform name' }), { target: { value: 'My site' } })
     fireEvent.click(screen.getByRole('button', { name: 'Choose icon for My site' }))
     const picker = render(<>{mock.popovers[0].node}</>)
@@ -148,7 +166,7 @@ describe('social platform settings list', () => {
 
   it('deletes a platform on the second click of its remove button', async () => {
     const mock = await setupWithIcons([link('instagram', 'Instagram'), link('wechat', 'WeChat')])
-    render(<Settings section="social" />)
+    render(<Settings />)
 
     const remove = screen.getByRole('button', { name: 'Remove WeChat' })
     fireEvent.click(remove)
