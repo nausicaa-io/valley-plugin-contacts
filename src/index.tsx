@@ -27,6 +27,7 @@ import { Settings } from './Settings'
 import { initLocalization } from './localization'
 import { contactsAgentTools } from './agentTools'
 import { registerDirectory } from './directory'
+import { registerContactPlaces } from './contactPlaces'
 import { registerContactSurfaces } from './surfaces'
 import { ContactFileView } from './FileView'
 import { registerContactDetails } from './contactView'
@@ -64,6 +65,7 @@ export function register(api: ValleyPluginApi): () => Promise<void> {
   api.registerView('contacts.file', ContactFileView)
 
   const offDirectory = registerDirectory(api)
+  const offPlaces = registerContactPlaces(api)
   const offCommands = registerContactsCommands(api)
   const offFileCommands = registerContactFileCommands(api)
   const offSurfaces = registerContactSurfaces(api)
@@ -78,6 +80,7 @@ export function register(api: ValleyPluginApi): () => Promise<void> {
   return () => {
     if (disposal) return disposal
     const directoryDrain = offDirectory()
+    offPlaces()
     const searchDrain = offSearch()
     offCommands()
     offFileCommands()

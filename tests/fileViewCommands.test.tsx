@@ -20,7 +20,7 @@ afterEach(async () => { cleanup(); for (const dispose of disposals.splice(0).rev
 
 function setup() {
   const mock = createMockValleyApi({ manifest: { id: 'contacts' }, groups: [{ id: 'friends', name: 'Friends', color: '#eab308' }, { id: 'work', name: 'Work', color: '#a855f7' }, { id: 'family', name: 'Family', color: '#16a34a' }], settings: { contactsRoot: 'Plants' },
-    ...cardRealm({ [path]: { firstName: 'Fern', groups: ['Friends'], email: [{ value: 'fern@example.test' }], phone: [{ value: '+41 123' }], place: [{ value: 'Zurich' }], websites: ['https://example.com/fern'], socialMedia: [{ platform: 'github', handle: 'fern' }], relations: [{ to: uidFor(relatedPath), type: 'friend' }], birthdate: '--06-21', note: 'Original' }, [relatedPath]: { firstName: 'Moss' } }) })
+    ...cardRealm({ [path]: { firstName: 'Fern', groups: ['Friends'], email: [{ value: 'fern@example.test' }], phone: [{ value: '+41 123' }], place: [{ value: 'Zurich' }], websites: [{ value: 'https://example.com/fern' }], socialMedia: [{ platform: 'github', handle: 'fern' }], relations: [{ to: uidFor(relatedPath), type: 'friend' }], birthdate: '--06-21', note: 'Original' }, [relatedPath]: { firstName: 'Moss' } }) })
   initRuntime(mock.api); disposals.push(registerContactFileCommands(mock.api))
   const command = (id: string) => mock.commands.find(command => command.id === id || command.id.endsWith(`:${id}`))!
   const ajv = new Ajv({ strict: true })
@@ -58,14 +58,14 @@ describe('exact mounted Contact file actions', () => {
     await fixture.invoke({ type: 'patch', fields: { firstName: 'Bäume', middleName: 'Canopy', lastName: 'Forest', nickname: 'Birch', birthdate: '2000-06-21', profession: 'Botanist', cover: 'assets/cover.png', fileName: 'Fern', note: 'Raw **Markdown**' } })
     expect(rendered.container.querySelector('.ct-notes-editor textarea')).toHaveValue('Raw **Markdown**')
     expect((await fixture.inspect()).form).toMatchObject({ firstName: 'Bäume', middleName: 'Canopy', lastName: 'Forest', nickname: 'Birch', birthdate: '2000-06-21', profession: 'Botanist', cover: 'assets/cover.png', fileName: 'Fern', note: 'Raw **Markdown**' })
-    const fields: Record<ContactCollection, Record<string, string>> = { phone: { value: '+41 456', type: 'work' }, email: { value: 'birch@example.test', type: 'work' }, place: { value: 'Basel', type: 'home' }, organization: { name: 'Valley', title: 'Engineer', dept: 'Forest' }, social: { platform: 'github', handle: 'birch' }, website: { value: 'https://example.com/birch' }, relation: { toName: 'Moss', type: 'work', role: 'colleague' } }
+    const fields: Record<ContactCollection, Record<string, string>> = { phone: { value: '+41 456', type: 'work' }, email: { value: 'birch@example.test', type: 'work' }, place: { value: 'Basel', type: 'home' }, organization: { name: 'Valley', title: 'Engineer', dept: 'Forest' }, social: { platform: 'github', handle: 'birch' }, website: { value: 'https://example.com/birch', type: 'Work' }, relation: { toName: 'Moss', type: 'work', role: 'colleague' } }
     for (const collection of Object.keys(fields) as ContactCollection[]) {
       await fixture.invoke({ type: 'row-add', collection })
       const key = collection === 'website' ? 'websites' : collection === 'relation' ? 'relations' : collection
       const rows = (await fixture.inspect()).form![key] as unknown[]
       await fixture.invoke({ type: 'row-edit', collection, index: rows.length - 1, fields: fields[collection] })
       const current = (await fixture.inspect()).form![key] as unknown[]
-      expect(current.at(-1)).toEqual(collection === 'social' ? expect.objectContaining({ value: fields[collection] }) : collection === 'website' ? fields[collection].value : expect.objectContaining(fields[collection]))
+      expect(current.at(-1)).toEqual(collection === 'social' ? expect.objectContaining({ value: fields[collection] }) : expect.objectContaining(fields[collection]))
       await fixture.invoke({ type: 'row-remove', collection, index: rows.length - 1 }); expect(((await fixture.inspect()).form![key] as unknown[])).toHaveLength(rows.length - 1)
     }
     await fixture.invoke({ type: 'group-add', value: 'Work' }); await fixture.invoke({ type: 'group-add', value: 'Family' }); await fixture.invoke({ type: 'group-move', from: 2, to: 0 }); expect((await fixture.inspect()).form?.groups).toEqual(['Family', 'Friends', 'Work'])

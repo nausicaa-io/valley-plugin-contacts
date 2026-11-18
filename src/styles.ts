@@ -106,7 +106,10 @@ const CSS = `
 .ct-page-body { flex:1; min-height:0; overflow-y:auto; }
 
 /* ---- Detail view ------------------------------------------------------ */
-.ct-detail { max-width:720px; margin:0 auto; padding:28px 30px 54px; }
+.ct-detail { padding:28px 30px 54px; }
+/* The page uses its whole width (18 Nov): sections sit side by side while each
+   still gets 300px, else they stack in one column. */
+.ct-detail-sections { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap:0 36px; align-items:start; }
 .ct-detail-head { display:flex; align-items:center; gap:18px; margin-bottom:14px; }
 .ct-detail-avatar { position:relative; overflow:hidden; width:70px; height:70px; border-radius:50%; flex-shrink:0;
   display:grid; place-items:center; background:#8f969f; color:#fff; font-size:1.5rem; font-weight:650; text-transform:uppercase; }
@@ -174,9 +177,13 @@ const CSS = `
 .ct-rel-role { font-size:0.75rem; color:var(--text-tertiary); }
 
 /* ---- Form ------------------------------------------------------------- */
-.ct-form { max-width:680px; margin:0 auto; padding:22px 26px 48px; display:flex; flex-direction:column; gap:18px; }
-.ct-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-.ct-form-field { display:flex; flex-direction:column; gap:4px; }
+.ct-form { padding:22px 26px 48px; display:flex; flex-direction:column; gap:18px; }
+/* The form uses the page's whole width (18 Nov): name fields fill as many
+   columns as fit at 200px each, the lists sit side by side while each gets
+   420px, and every list row stacks its inputs once its list is narrow. */
+.ct-form-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap:12px; }
+.ct-form-sections { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap:22px 32px; align-items:start; }
+.ct-form-field { display:flex; flex-direction:column; gap:4px; min-width:0; }
 .ct-form-field.full { grid-column:1 / -1; }
 .ct-form-field label { font-size:0.6875rem; font-weight:600; text-transform:uppercase; letter-spacing:.03em;
   color:var(--text-tertiary); }
@@ -188,27 +195,61 @@ const CSS = `
 .ct-input::placeholder { color:var(--control-placeholder, var(--text-tertiary)); }
 .ct-input:focus, .ct-select:focus { border-color:var(--control-focus-border, var(--accent-color));
   box-shadow:0 0 0 2px var(--control-focus-ring, transparent); }
-.ct-birthdate { display:flex; align-items:center; gap:10px; }
-.ct-birthdate > :first-child { flex:1; min-width:0; }
+.ct-birthdate { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; }
+.ct-birthdate > :first-child { flex:1 1 140px; min-width:0; }
 .ct-birthdate-noyear { display:inline-flex; align-items:center; gap:6px; flex:0 0 auto; color:var(--text-secondary); font-size:0.75rem; white-space:nowrap; }
 .ct-file-name { display:flex; align-items:center; gap:7px; }
 .ct-file-name .ct-input { flex:1; }
 .ct-file-ext { flex-shrink:0; font-size:0.75rem; color:var(--text-tertiary); }
+.ct-field-error { margin:2px 0 0; font-size:0.75rem; color:var(--tint-red-text, #b91c1c); }
+.ct-file-name .ct-input[aria-invalid] { border-color:var(--tint-red-text, #b91c1c); }
 .ct-group-editor { display:flex; flex-direction:column; gap:7px; }
 .ct-group-pills { display:flex; flex-wrap:wrap; gap:6px; min-height:24px; }
 .ct-group-pill { cursor:grab; user-select:none; }
 .ct-group-pill:active { cursor:grabbing; }
-.ct-group-add { display:flex; gap:7px; align-items:center; }
-.ct-group-add .ct-input { flex:1; }
+.ct-group-add { display:flex; flex-wrap:wrap; gap:7px; align-items:center; }
+.ct-group-add .ct-input { flex:1 1 160px; min-width:0; }
 .ct-group-add .ct-rep-add { flex-shrink:0; }
-.ct-rep { display:flex; flex-direction:column; gap:7px; }
+.ct-rep { display:flex; flex-direction:column; gap:7px; min-width:0; container-type:inline-size; }
 .ct-rep-row { display:flex; gap:7px; align-items:center; }
-.ct-rep-row .ct-input { flex:1; }
+.ct-rep-row .ct-input { flex:1; min-width:0; }
 /* The address row's field is the SDK AddressField; it draws its own frame, so only its footprint is set here. */
 .ct-rep-row .ct-address { flex:1; min-width:0; }
 /* A picked address shows its map under the field; the type and remove controls stay level with the field. */
 .ct-place-row { align-items:flex-start; }
 .ct-rep-row .ct-select { flex:0 0 130px; }
+.ct-select-wrap { display:block; min-width:0; }
+.ct-select-wrap > * { width:100%; min-width:0; }
+/* The SDK select keeps a 180px minimum of its own; in a row it takes the wrapper's width instead. */
+.ct-select-wrap .select-field { width:100%; min-width:0; }
+.ct-rep-row .ct-label-select { flex:0 0 160px; }
+.ct-rep-row .ct-platform-select { flex:0 0 160px; }
+/* Organization and relation rows: three captioned inputs side by side. */
+.ct-multi-row { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)) 30px; align-items:end; gap:7px; }
+.ct-subfield { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.ct-subfield-label { font-size:0.6875rem; color:var(--text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ct-subfield > .ct-input, .ct-subfield > .ct-select-wrap { width:100%; }
+/* A narrow list: the label drops under its value, the three inputs stack,
+   and the platform takes its own line above the username. */
+@container (max-width: 380px) {
+  .ct-method-row { flex-wrap:wrap; }
+  .ct-method-row > .ct-input, .ct-method-row > .ct-address { flex:1 1 100%; order:0; }
+  .ct-method-row > .ct-label-select { flex:1 1 0; order:1; }
+  .ct-method-row > .ct-rep-del { order:2; }
+  .ct-method-row + .ct-method-row { padding-top:8px; border-top:1px solid var(--border-light); }
+}
+@container (max-width: 520px) {
+  .ct-multi-row { grid-template-columns:minmax(0,1fr) 30px; align-items:start; row-gap:6px; }
+  .ct-multi-row > .ct-subfield { grid-column:1; }
+  .ct-multi-row > .ct-rep-del { grid-column:2; grid-row:1; align-self:end; }
+  .ct-multi-row + .ct-multi-row { padding-top:10px; border-top:1px solid var(--border-light); }
+}
+@container (max-width: 340px) {
+  .ct-social-edit-row { flex-wrap:wrap; }
+  .ct-social-edit-row > .ct-platform-select { flex:1 1 0; }
+  .ct-social-edit-row > .ct-input { flex:1 1 100%; order:3; }
+  .ct-social-edit-row + .ct-social-edit-row { padding-top:8px; border-top:1px solid var(--border-light); }
+}
 /* The relation-type picker is the shared SelectField; it owns its own frame, so
    only the row footprint is set here. */
 .ct-select.select-field { width:100%; min-height:32px; }
@@ -225,18 +266,12 @@ const CSS = `
 .ct-form-delete { margin-right:auto; }
 .ct-form-section-title { font-size:0.6875rem; font-weight:650; text-transform:uppercase; letter-spacing:.04em;
   color:var(--text-tertiary); margin-bottom:-4px; }
-.ct-rep-row .ct-rep-type { flex:0 0 130px; }
 .ct-form-status { min-height:1em; font-size:0.6875rem; color:var(--text-tertiary); }
 .ct-form-error { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0; font-size:0.75rem;
   color:var(--tint-red-text, #b91c1c); }
 /* The Properties sidebar: one column, rows wrap instead of overflowing. */
-.ct-form-compact { max-width:none; margin:0; padding:8px 12px 24px; gap:14px; }
-.ct-form-compact .ct-form-grid { grid-template-columns:minmax(0,1fr); gap:10px; }
-.ct-form-compact .ct-rep-row, .ct-form-compact .ct-group-add { flex-wrap:wrap; }
-.ct-form-compact .ct-rep-row > * { min-width:0; }
-.ct-form-compact .ct-rep-row .ct-input, .ct-form-compact .ct-rep-row .ct-address { flex:1 1 120px; }
-.ct-form-compact .ct-rep-row .ct-rep-type { flex:0 1 96px; }
-.ct-form-compact .ct-rep-row .ct-select { flex:1 1 110px; }
+.ct-form-compact { padding:8px 12px 24px; gap:14px; }
+.ct-form-compact .ct-form-grid { gap:10px; }
 .ct-file-page { height:100%; overflow:auto; }
 .ct-social-icon { display:grid; place-items:center; width:26px; height:30px; flex-shrink:0;
   color:var(--text-secondary); }
@@ -254,11 +289,21 @@ const CSS = `
 .ct-social-setting-row { position:relative; border-color:var(--border-light); border-radius:var(--radius); background:var(--container-color); }
 .ct-social-setting-row .ct-social-icon { align-self:center; width:20px; height:20px; color:var(--text-secondary); }
 .ct-settings-text { width:100%; min-width:0; box-sizing:border-box; }
-/* The add row ends in a labelled button, not the 28px remove glyph the rows
-   above end in — give that last column its own width or the button is crushed
-   to a clipped black chip. */
-.ct-social-setting-add { background:var(--hover-bg);
-  grid-template-columns:22px 20px minmax(0,.45fr) minmax(0,1fr) auto; }
+/* The add row keeps the rows' columns and ends in a + where they end in the ×,
+   so its inputs line up with theirs (18 Nov). */
+.ct-social-setting-add { background:var(--hover-bg); }
+.ct-settings-add { justify-self:center; width:28px; height:28px; min-width:28px; padding:0; }
+.ct-settings-add svg { width:14px; height:14px; }
+
+/* ---- Labels (18 Nov): one list per kind, same rows as the platforms ---- */
+.ct-label-settings { gap:var(--space-4, 16px); }
+.ct-label-list { display:flex; flex-direction:column; gap:var(--ct-social-row-gap); }
+.ct-label-list-head { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:22px; }
+.ct-label-list-title { font-size:var(--small-font-size); font-weight:var(--font-semi-bold, 600); color:var(--title-color, var(--text-color)); }
+.ct-label-reset { padding:0; border:none; background:none; color:var(--text-tertiary); font-size:var(--smaller-font-size); cursor:pointer; }
+.ct-label-reset:hover { color:var(--text-color); }
+.ct-label-setting-row { grid-template-columns:22px minmax(0,1fr) 32px 28px; }
+.ct-label-setting-row .settings-group-usage { text-align:center; color:var(--text-tertiary); font-size:var(--smaller-font-size); }
 
 /* ---- Social platforms: reorder + icon picker ------------------------- */
 /* The grip is the kit's own .settings-reorder-handle; this only places it. */
@@ -284,12 +329,6 @@ const CSS = `
 .ct-social-edit-row.drop-before::before { top:0; }
 .ct-social-edit-row.drop-after::before { bottom:0; }
 
-.ct-social-pick { display:grid; place-items:center; flex:0 0 30px; width:30px; height:30px; padding:0;
-  border:1px solid var(--border-light); border-radius:6px; background:var(--control-bg);
-  color:var(--text-secondary); cursor:pointer; transition:color .12s ease, border-color .12s ease; }
-.ct-social-pick:hover { color:var(--text-color); border-color:var(--text-secondary); }
-.ct-social-pick.empty { border-style:dashed; color:var(--text-tertiary); }
-.ct-social-pick svg { width:17px; height:17px; }
 .ct-social-picker-body { display:grid; gap:8px; width:264px; }
 .ct-social-picker-search { width:100%; }
 .ct-social-picker-grid { display:grid; grid-template-columns:repeat(6, 1fr); gap:4px;
@@ -304,6 +343,7 @@ const CSS = `
 .ct-social-picker-custom:hover { color:var(--text-color); border-color:var(--text-secondary); }
 .ct-social-picker-hint { font-size:.6875rem; line-height:1.4; color:var(--text-tertiary); overflow-wrap:anywhere; }
 .ct-social-picker-tile .ct-platform-icon { display:inline-grid; width:17px; height:17px; }
+
 
 /* ---- Settings: group remove (X -> confirm trash) --------------------- */
 .ct-group-remove { display:grid; place-items:center; width:24px; height:24px; flex-shrink:0; padding:0;

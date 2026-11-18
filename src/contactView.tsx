@@ -79,7 +79,7 @@ export function registerContactDetails(owner: ValleyPluginApi): () => void {
         name: contact.displayName, groups: contact.groups.join(', '), birthday: formatContactDate(contact.birthdate, owner.getState().dateFormat),
         email: contact.email.map(entry => entry.value).join(', '), phone: contact.phone.map(entry => entry.value).join(', '),
         organization: contact.organization.map(entry => [entry.name, entry.title].filter(Boolean).join(' · ')).join(', '),
-        profession: contact.profession, nickname: contact.nickname, address: contact.place.map(entry => entry.value).join(', '), website: contact.websites.join(', ')
+        profession: contact.profession, nickname: contact.nickname, address: contact.place.map(entry => entry.value).join(', '), website: contact.websites.map(entry => entry.value).join(', ')
       }
       return { items: { ...Object.fromEntries(fields.map(id => [id, { text: values[id], available: Boolean(values[id]) }])),
         view: { value: state(owner).modes.get(contact.relPath) ?? 'reading', options: [

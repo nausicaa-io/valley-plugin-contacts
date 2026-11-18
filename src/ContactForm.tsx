@@ -3,15 +3,16 @@ import type { CSSProperties, ReactElement, ReactNode } from 'react'
 import { React, api as runtimeApi } from './runtime'
 import type { MountedPluginView, PluginEditorProvider, ValleyPluginApi } from '@valley/plugin-sdk'
 import type { TextDocumentRead } from '@valley/plugin-sdk/types'
-import type { Contact, ContactMethod, Organization, RelationType, Social, SocialLink } from './types'
+import type { Contact, ContactLabelKind, ContactMethod, Organization, RelationType, Social, SocialLink } from './types'
 import { RELATION_TYPES } from './types'
 import { getStore } from './store'
 import { paletteCssValue } from '@valley/plugin-sdk/palette'
-import { allGroups, contactFileBase, groupColorFor, normalizeGroupName, parentGroupName, readContactDocument, relationLabel, relationTarget, saveContact, UNTITLED_FILE_BASE } from './data'
+import { allGroups, getSettings, useContactLabels, contactFileBase, groupColorFor, normalizeGroupName, parentGroupName, readContactDocument, relationLabel, relationTarget, saveContact, UNTITLED_FILE_BASE } from './data'
 import { emptyContact, parseContactFile, storedAddressPlace } from './schema'
 import { RELATION_LABELS } from './relationGraphModel'
 import { GripVertical, Plus, X } from './icons'
-import { canonicalPlatform, iconForPlatform, resolveSocial } from './social'
+import { canonicalPlatform, resolveSocial } from './social'
+import { sanitizeFileName } from './contactDocuments'
 import { getSocialLinks } from './data'
 import { dateFormatPlaceholder, formatContactDate, initials, parseContactDateInput } from './util'
 import { assetUrlForRelPath } from '@valley/plugin-sdk/fileTypes'
@@ -26,7 +27,7 @@ const BLANK: Contact = emptyContact()
 interface RelDraft { toName: string; ref: string; label: string; type: RelationType; role: string }
 
 /** Draft keys that are bookkeeping, not contact edits. */
-const DRAFT_STATE = new Set(['sourceContact', 'expectedDocument', 'ready', 'saving', 'error', 'revision', 'savedRevision', 'committedRevision', 'fileNameEdited'])
+const DRAFT_STATE = new Set(['ownPath', 'sourceContact', 'expectedDocument', 'ready', 'saving', 'error', 'revision', 'savedRevision', 'committedRevision', 'fileNameEdited'])
 
 /** A social row while it is being edited. Reordering needs an id that survives
  *  the move, and a `Social` has none — two blank rows are indistinguishable. */
@@ -210,7 +211,7 @@ function registerContactEditor(owner: ValleyPluginApi, path: string, instanceId:
 interface DraftValues {
   firstName: string; middleName: string; lastName: string; nickname: string; birthdate: string; profession: string; cover: string; photo: string
   groups: string[]; phone: ContactMethod[]; email: ContactMethod[]; place: ContactMethod[]; organization: Organization[]; social: SocialRow[]
-  websites: string[]; relations: RelDraft[]; note: string
+  websites: ContactMethod[]; relations: RelDraft[]; note: string
 }
 
 /** The card a draft's values describe, as the form saves it. */
@@ -235,7 +236,7 @@ function contactFromDraft(base: Contact, values: DraftValues, dateFormat: string
       .map((row) => row.value)
       .filter((s) => s.platform || s.handle || s.url)
       .map((s) => ({ ...s, platform: s.platform ? canonicalPlatform(s.platform) : s.platform })),
-    websites: values.websites.filter((w) => w.trim()),
+    websites: values.websites.filter((w) => w.value.trim()),
     relations: values.relations
       .filter((r) => r.toName.trim())
       .map((r) => ({ to: r.ref && r.toName === r.label ? r.ref : relationTarget(r.toName, contacts), type: r.type, role: r.role.trim() || undefined })),
@@ -325,6 +326,7 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
   const snap = store.getSnapshot()
   const dateFormat = api.getState().dateFormat
   const socialLinks = getSocialLinks()
+  const labels = useContactLabels(api)
   const draftKey = contact?.relPath ?? '__new__'
   const [instanceId] = React.useState(() => `contact-form-${crypto.randomUUID()}`)
   const editorId = mountedView?.mountId ?? instanceId
@@ -385,7 +387,7 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
   const [place, setPlace] = useContactField<ContactMethod[]>(api, draftKey, 'place', base.place, editorId)
   const [organization, setOrganization] = useContactField<Organization[]>(api, draftKey, 'organization', base.organization, editorId)
   const [social, setSocial] = useContactField<SocialRow[]>(api, draftKey, 'social', () => base.socialMedia.map((s) => newSocialRow(s)), editorId)
-  const [websites, setWebsites] = useContactField<string[]>(api, draftKey, 'websites', base.websites, editorId)
+  const [websites, setWebsites] = useContactField<ContactMethod[]>(api, draftKey, 'websites', base.websites, editorId)
   const [relations, setRelations] = useContactField<RelDraft[]>(api, draftKey, 'relations', () => relationDrafts(base, snap.contacts), editorId)
   const [note, setNote] = useContactField(api, draftKey, 'note', base.note, editorId)
   const [valleyReady, setNotesReady] = useContactField(api, draftKey, 'ready', !contact?.relPath)
@@ -414,6 +416,14 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
     : fileNameInSync
       ? derivedFileName
       : base.fileName
+  // No two cards share a file name in one folder (18 Nov): a name another card of this folder already has, in any
+  // case, is refused with a note under the field, and the file keeps its current name until the name is changed.
+  const folderOf = (path: string): string => path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+  const ownFolder = contact?.relPath ? folderOf(contact.relPath) : getSettings(api).contactsRoot
+  const wantedName = sanitizeFileName(fileNameValue) || UNTITLED_FILE_BASE
+  const fileNameTaken = wantedName.toLowerCase() !== (contact?.fileName ?? '').toLowerCase()
+    && snap.contacts.some((other) => other.relPath !== contact?.relPath && other.relPath !== contactDraft(api, draftKey).fields.get('ownPath')
+      && !(base.uid && other.uid === base.uid) && folderOf(other.relPath) === ownFolder && other.fileName.toLowerCase() === wantedName.toLowerCase())
 
   const [expectedDocument, setExpectedDocument] = useContactField<TextDocumentRead | undefined>(api, draftKey, 'expectedDocument', undefined)
   const [error, setError] = useContactField(api, draftKey, 'error', '')
@@ -490,6 +500,8 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
   const save = async (commandContext?: ContactFileActionContext): Promise<void> => {
     const draft = contactDraft(api, draftKey)
     if (!valleyReady || contact?.relPath && !draft.mounts.has(editorId) || draft.fences || draft.fields.get('saving')) { if (commandContext) throw Object.assign(new Error('The exact Contact editor is unavailable.'), { outcome: 'not-applied' }); return }
+    // A new card is not created under a name its folder already has; an existing one saves and keeps its name.
+    if (!contact && fileNameTaken) { if (commandContext) throw Object.assign(new Error(uiText('contacts.form.fileNameTaken', { p0: wantedName })), { outcome: 'not-applied' }); return }
     const target = (draft.fields.get('revision') as number | undefined) ?? 0
     setSaving(true)
     setError('')
@@ -497,12 +509,14 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
     try {
       if (contact && !expectedDocument) throw new Error(uiText('contacts.error.changed'))
       const editor = contact?.relPath ? { ...(draft.owners.get(draft.ownerMountId ?? editorId) ?? (mountedView ? { view: mountedView } : { path: contact.relPath, instanceId })), revision: `${draft.identity}:${target}`, committed: () => setCommittedRevision(target) } : undefined
-      const saved = await saveContact(next, { previous: base, fileName: fileNameValue, document: expectedDocument }, api, editor, commandContext ? async paths => {
+      const saved = await saveContact(next, { previous: base, fileName: fileNameTaken ? contact?.fileName : fileNameValue, document: expectedDocument }, api, editor, commandContext ? async paths => {
         await commandContext.validate(paths.map(path => ({ kind: 'file' as const, path, fileOperation: 'write' as const })))
         if (!draft.mounts.has(editorId) || draft.fences || draft.fields.get('revision') !== target || draft.ownerMountId && draft.ownerMountId !== editorId) throw Object.assign(new Error('The Contact draft changed before its file effect.'), { outcome: 'not-applied' })
       } : undefined)
       if (!saved) throw new Error(uiText('contacts.error.changed'))
       if (saved.editorConflict) throw new Error(uiText('contacts.error.changed'))
+      // The card's own file, under its new name too, is never a namesake of itself.
+      draft.fields.set('ownPath', saved.relPath)
       setCommittedRevision(target)
       if (autosave && contact && saved.relPath !== contact.relPath) {
         // Renamed: this form keeps showing the saved values until the sidebar
@@ -563,7 +577,7 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
         else if (action.collection === 'place') setPlace([...place, { value: '' }])
         else if (action.collection === 'organization') setOrganization([...organization, {}])
         else if (action.collection === 'social') setSocial([...social, newSocialRow()])
-        else if (action.collection === 'website') setWebsites([...websites, ''])
+        else if (action.collection === 'website') setWebsites([...websites, { value: '' }])
         else setRelations([...relations, { toName: '', ref: '', label: '', type: 'friend', role: '' }])
       },
       'row-edit': action => {
@@ -577,7 +591,7 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
         else if (action.collection === 'place') setPlace(replace(place, i, { ...place[i], ...fields }))
         else if (action.collection === 'organization') setOrganization(replace(organization, i, { ...organization[i], ...fields }))
         else if (action.collection === 'social') setSocial(replace(social, i, { ...social[i], value: { ...social[i].value, ...fields } }))
-        else if (action.collection === 'website') setWebsites(replace(websites, i, fields.value))
+        else if (action.collection === 'website') setWebsites(replace(websites, i, { ...websites[i], ...fields }))
         else setRelations(replace(relations, i, { ...relations[i], ...fields } as RelDraft))
       },
       'row-remove': action => {
@@ -624,8 +638,8 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
     return () => { controlRef.current = null }
   }, [controlRef, cancel])
   React.useEffect(() => {
-    onActionState?.({ saving, canSave: valleyReady && !prepared, label: contact ? uiText('auto.efc007a393f6') : uiText('auto.6e157c5da441') })
-  }, [saving, valleyReady, prepared, contact, onActionState])
+    onActionState?.({ saving, canSave: valleyReady && !prepared && !(fileNameTaken && !contact), label: contact ? uiText('auto.efc007a393f6') : uiText('auto.6e157c5da441') })
+  }, [saving, valleyReady, prepared, contact, onActionState, fileNameTaken])
   React.useEffect(() => {
     if (!autosave || !valleyReady || saving || revision === savedRevision) return
     const timer = window.setTimeout(() => { void saveRef.current() }, 600)
@@ -640,7 +654,6 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
           {autosave && <button type="button" className="ct-rep-add" onClick={reload}>{uiText('contacts.properties.reload')}</button>}
         </p>
       )}
-      {autosave && <div className="ct-form-status" aria-live="polite">{saving ? uiText('auto.56a2285c5b11') : revision !== savedRevision ? uiText('contacts.properties.pending') : ''}</div>}
       <PhotoField
         photo={photo}
         fallback={photo !== base.photo ? '' : snap.coverPaths[contact?.relPath ?? ''] ? assetUrlForRelPath(snap.coverPaths[contact?.relPath ?? '']!) : ''}
@@ -658,6 +671,7 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
           <div className="ct-file-name">
             <input
               className="ct-input"
+              aria-invalid={fileNameTaken || undefined}
               value={fileNameValue}
               placeholder={derivedFileName || UNTITLED_FILE_BASE}
               onChange={(e) => {
@@ -667,6 +681,7 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
             />
             <span className="ct-file-ext">.vcf</span>
           </div>
+          {fileNameTaken && <p role="alert" className="ct-field-error">{uiText('contacts.form.fileNameTaken', { p0: wantedName })}</p>}
         </Field>
         <Field label={uiText('auto.ae9629f4ebb8')} full>
           <div className="ct-group-editor">
@@ -720,18 +735,26 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
         </Field>
       </div>
 
-      <MethodList title={uiText('auto.77064d526523')} items={phone} setItems={setPhone} placeholder="+41 79 ..." labelPlaceholder="mobile" />
-      <MethodList title={uiText('auto.84add5b29527')} items={email} setItems={setEmail} placeholder={uiText('auto.9703026304af')} labelPlaceholder="work" />
-      <PlaceList api={api} title={uiText('auto.d70f93df5e8f')} items={place} setItems={setPlace} placeholder={uiText('auto.4b4fa9d8f179')} labelPlaceholder="home" />
+      {/* On a wide page the lists sit side by side; on a narrow one they stack, and each row stacks its own inputs (18 Nov). */}
+      <div className="ct-form-sections">
+      <MethodList api={api} kind="phone" labels={labels.phone} title={uiText('auto.77064d526523')} items={phone} setItems={setPhone} placeholder="+41 79 ..." />
+      <MethodList api={api} kind="email" labels={labels.email} title={uiText('auto.84add5b29527')} items={email} setItems={setEmail} placeholder={uiText('auto.9703026304af')} />
+      <PlaceList api={api} labels={labels.place} title={uiText('auto.d70f93df5e8f')} items={place} setItems={setPlace} placeholder={uiText('auto.4b4fa9d8f179')} />
 
       <div className="ct-rep">
         <div className="ct-form-section-title">{uiText('auto.519255ae1f74')}</div>
         {organization.map((o, i) => (
-          <div className="ct-rep-row" key={i}>
-            <input className="ct-input" placeholder={uiText('auto.709a23220f2c')} value={o.name ?? ''} onChange={(e) => setOrganization(replace(organization, i, { ...o, name: val(e) }))} />
-            <input className="ct-input" placeholder={uiText('auto.768e0c1c6957')} value={o.title ?? ''} onChange={(e) => setOrganization(replace(organization, i, { ...o, title: val(e) }))} />
-            <input className="ct-input" placeholder={uiText('auto.48a7b68e8254')} value={o.dept ?? ''} onChange={(e) => setOrganization(replace(organization, i, { ...o, dept: val(e) }))} />
-            <button className="ct-rep-del" onClick={() => setOrganization(remove(organization, i))}><X /></button>
+          <div className="ct-rep-row ct-multi-row" key={i}>
+            <SubField label={uiText('contacts.form.orgName')}>
+              <input className="ct-input" placeholder={uiText('contacts.form.orgNamePlaceholder')} aria-label={uiText('contacts.form.orgName')} value={o.name ?? ''} onChange={(e) => setOrganization(replace(organization, i, { ...o, name: val(e) }))} />
+            </SubField>
+            <SubField label={uiText('contacts.form.orgTitle')}>
+              <input className="ct-input" placeholder={uiText('contacts.form.orgTitlePlaceholder')} aria-label={uiText('contacts.form.orgTitle')} value={o.title ?? ''} onChange={(e) => setOrganization(replace(organization, i, { ...o, title: val(e) }))} />
+            </SubField>
+            <SubField label={uiText('contacts.form.orgDept')}>
+              <input className="ct-input" placeholder={uiText('contacts.form.orgDeptPlaceholder')} aria-label={uiText('contacts.form.orgDept')} value={o.dept ?? ''} onChange={(e) => setOrganization(replace(organization, i, { ...o, dept: val(e) }))} />
+            </SubField>
+            <button className="ct-rep-del" aria-label={uiText('contacts.form.removeRow')} title={uiText('contacts.form.removeRow')} onClick={() => setOrganization(remove(organization, i))}><X /></button>
           </div>
         ))}
         <button className="ct-rep-add" onClick={() => setOrganization([...organization, {}])}><Plus /> {uiText('auto.e6d645c114a5')}</button>
@@ -752,15 +775,16 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
                 className={`${handleProps.className ?? ''} ct-social-grip`}
                 title={uiText('contacts.social.reorder')}
               ><GripVertical /></button>
-              <PlatformPicker
+              <span className="ct-social-icon" aria-hidden="true">{React.createElement(resolveSocial({ platform: row.value.platform ?? '' }, socialLinks).icon)}</span>
+              <PlatformSelect
                 api={api}
                 value={row.value.platform ?? ''}
                 links={socialLinks}
                 onChange={(platform) => setSocial(replace(social, i, { ...row, value: { ...row.value, platform } }))}
               />
-              <input className="ct-input" placeholder={uiText('auto.249ba3600002')} value={row.value.handle ?? ''}
+              <input className="ct-input" placeholder={uiText('auto.249ba3600002')} aria-label={uiText('contacts.form.username')} value={row.value.handle ?? ''}
                 onChange={(e) => setSocial(replace(social, i, { ...row, value: { ...row.value, handle: val(e) } }))} />
-              <button className="ct-rep-del" onClick={() => setSocial(remove(social, i))}><X /></button>
+              <button className="ct-rep-del" aria-label={uiText('contacts.form.removeRow')} title={uiText('contacts.form.removeRow')} onClick={() => setSocial(remove(social, i))}><X /></button>
             </div>
           )
         })}
@@ -771,18 +795,26 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
       <div className="ct-rep">
         <div className="ct-form-section-title">{uiText('auto.6519fe11ef74')}</div>
         {relations.map((r, i) => (
-          <div className="ct-rep-row" key={i}>
-            <ComboField className="ct-input" placeholder={uiText('auto.565e288e2a02')}
-              ariaLabel={uiText('auto.565e288e2a02')} value={r.toName}
-              onChange={(value) => setRelations(replace(relations, i, { ...r, toName: value }))}
-              options={snap.contacts.map((c) => ({ value: c.displayName, label: c.displayName }))} />
-            <SelectField className="ct-select" value={r.type}
-              ariaLabel={uiText('auto.79f3483671d7')}
-              onChange={(value) => setRelations(replace(relations, i, { ...r, type: value as RelationType }))}
-              options={RELATION_TYPES.map((t) => ({ value: t, label: RELATION_LABELS[t] }))} />
-            <input className="ct-input" placeholder={uiText('auto.c3f104d13657')} value={r.role}
-              onChange={(e) => setRelations(replace(relations, i, { ...r, role: val(e) }))} />
-            <button className="ct-rep-del" onClick={() => setRelations(remove(relations, i))}><X /></button>
+          <div className="ct-rep-row ct-multi-row" key={i}>
+            <SubField label={uiText('contacts.form.relationPerson')}>
+              <ComboField className="ct-input" placeholder={uiText('contacts.form.relationPersonPlaceholder')}
+                ariaLabel={uiText('contacts.form.relationPerson')} value={r.toName}
+                onChange={(value) => setRelations(replace(relations, i, { ...r, toName: value }))}
+                options={snap.contacts.map((c) => ({ value: c.displayName, label: c.displayName }))} />
+            </SubField>
+            <SubField label={uiText('contacts.form.relationType')}>
+              <span className="ct-select-wrap">
+                <SelectField value={r.type}
+                  ariaLabel={uiText('contacts.form.relationType')}
+                  onChange={(value) => setRelations(replace(relations, i, { ...r, type: value as RelationType }))}
+                  options={RELATION_TYPES.map((t) => ({ value: t, label: RELATION_LABELS[t] }))} />
+              </span>
+            </SubField>
+            <SubField label={uiText('contacts.form.relationRole')}>
+              <input className="ct-input" placeholder={uiText('contacts.form.relationRolePlaceholder')} aria-label={uiText('contacts.form.relationRole')} value={r.role}
+                onChange={(e) => setRelations(replace(relations, i, { ...r, role: val(e) }))} />
+            </SubField>
+            <button className="ct-rep-del" aria-label={uiText('contacts.form.removeRow')} title={uiText('contacts.form.removeRow')} onClick={() => setRelations(remove(relations, i))}><X /></button>
           </div>
         ))}
         <button className="ct-rep-add" onClick={() => setRelations([...relations, { toName: '', ref: '', label: '', type: 'friend', role: '' }])}><Plus /> {uiText('auto.8fda01a98d1f')}</button>
@@ -791,12 +823,15 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
       <div className="ct-rep">
         <div className="ct-form-section-title">{uiText('auto.a87a48da60ac')}</div>
         {websites.map((w, i) => (
-          <div className="ct-rep-row" key={i}>
-            <input className="ct-input" placeholder="https://..." value={w} onChange={(e) => setWebsites(replace(websites, i, val(e)))} />
-            <button className="ct-rep-del" onClick={() => setWebsites(remove(websites, i))}><X /></button>
+          <div className="ct-rep-row ct-method-row" key={i}>
+            <input className="ct-input" placeholder="https://..." aria-label={uiText('auto.a87a48da60ac')} value={w.value} onChange={(e) => setWebsites(replace(websites, i, { ...w, value: val(e) }))} />
+            <LabelSelect api={api} kind="website" labels={labels.website} value={w.type ?? ''} onChange={(type) => setWebsites(replace(websites, i, withType(w, type)))} />
+            <button className="ct-rep-del" aria-label={uiText('contacts.form.removeRow')} title={uiText('contacts.form.removeRow')} onClick={() => setWebsites(remove(websites, i))}><X /></button>
           </div>
         ))}
-        <button className="ct-rep-add" onClick={() => setWebsites([...websites, ''])}><Plus /> {uiText('auto.cb9082a114f4')}</button>
+        <button className="ct-rep-add" onClick={() => setWebsites([...websites, { value: '' }])}><Plus /> {uiText('auto.cb9082a114f4')}</button>
+      </div>
+
       </div>
 
       <ContactNotesField
@@ -856,99 +891,82 @@ function ContactNotesField({ valleyReady, note, onChange, onSave }: {
 }
 
 /**
- * The platform of a social row, picked by its brand mark instead of its name —
- * the shape a profile's social links take everywhere else. The grid *is* the
- * configured registry (Settings → Contacts → Social platforms), in that order,
- * so reordering or deleting a platform there is what this offers; the search
- * line still accepts an unlisted platform, using its matching SVG or the
- * generic social icon.
+ * The platform of a social row, picked by name from the configured registry
+ * (Settings → Contacts → Social platforms), in that order (18 Nov). A saved
+ * platform that is not in the registry stays listed, so it is never lost.
  */
-function PlatformPicker({ api, value, links, onChange }: {
+function PlatformSelect({ api, value, links, onChange }: {
   api: ValleyPluginApi
   value: string
   links: readonly SocialLink[]
   onChange: (platform: string) => void
 }): ReactElement {
-  const ref = React.useRef<HTMLButtonElement>(null)
-  const Icon = resolveSocial({ platform: value }, links).icon
+  const { SelectField } = api.ui.settings
   const current = canonicalPlatform(value)
-  const name = links.find((link) => link.id === current)?.label ?? value.trim()
-  const label = uiText('auto.123a7f2fcc9a')
-  const open = (): void => {
-    const anchor = ref.current
-    if (!anchor) return
-    void api.ui.openPopover(
-      (ctx) => (
-        <PlatformGrid
-          links={links}
-          current={current}
-          onPick={(platform) => { onChange(platform); ctx.close() }}
-        />
-      ),
-      { anchor },
-      { className: 'ct-social-picker', ariaLabel: label }
-    )
-  }
+  const known = links.find((link) => link.id === current)
+  const options = links.map((link) => ({ value: link.label, label: link.label }))
+  if (value.trim() && !known) options.push({ value: value.trim(), label: value.trim() })
+  options.push({ value: EDIT_OPTION, label: uiText('contacts.form.editPlatforms') })
+  // The sandboxed SelectField does not take a class on its own frame, so its footprint is set on this wrapper.
   return (
-    <button
-      ref={ref}
-      type="button"
-      className={`ct-social-pick${name ? '' : ' empty'}`}
-      onClick={open}
-      title={name || label}
-      aria-label={name ? `${label}: ${name}` : label}
-    ><Icon /></button>
+    <span className="ct-select-wrap ct-platform-select">
+    <SelectField
+      value={known ? known.label : value.trim()}
+      ariaLabel={uiText('auto.123a7f2fcc9a')}
+      placeholder={uiText('contacts.form.choosePlatform')}
+      options={options}
+      onChange={(next) => { if (next === EDIT_OPTION) void api.workspace.openSettings('plugin:contacts#social'); else onChange(next) }}
+    />
+    </span>
   )
 }
 
-function PlatformGrid({ links, current, onPick }: {
-  links: readonly SocialLink[]
-  current: string
-  onPick: (platform: string) => void
+/** The dropdown row value that opens Settings instead of choosing an entry. */
+const EDIT_OPTION = '__contacts-edit__'
+
+/**
+ * The label of a phone, email, address or website row, picked from its list in
+ * Settings → Contacts → Labels (18 Nov). A saved label that is not in the list
+ * (another app's, or one removed since) stays listed, so it is never lost.
+ */
+function LabelSelect({ api, kind, labels, value, onChange }: {
+  api: ValleyPluginApi
+  kind: ContactLabelKind
+  labels: readonly string[]
+  value: string
+  onChange: (label: string) => void
 }): ReactElement {
-  const [query, setQuery] = React.useState('')
-  const needle = query.trim().toLowerCase()
-  const shown = needle
-    ? links.filter((link) => link.label.toLowerCase().includes(needle) || link.id.includes(needle))
-    : links
+  const { SelectField } = api.ui.settings
+  const saved = value.trim()
+  const match = labels.find((label) => label.toLowerCase() === saved.toLowerCase())
+  const options = labels.map((label) => ({ value: label, label }))
+  if (saved && !match) options.push({ value: saved, label: saved })
+  options.push({ value: '', label: uiText('contacts.form.noLabel') }, { value: EDIT_OPTION, label: uiText('contacts.form.editLabels') })
   return (
-    <div className="ct-social-picker-body">
-      <input
-        className="ct-input ct-social-picker-search"
-        autoFocus
-        value={query}
-        spellCheck={false}
-        placeholder={uiText('contacts.social.searchPlatform')}
-        aria-label={uiText('contacts.social.searchPlatform')}
-        onChange={(e) => setQuery(val(e))}
-        onKeyDown={(e) => {
-          if (e.key !== 'Enter') return
-          e.preventDefault()
-          const pick = shown[0]?.label ?? query.trim()
-          if (pick) onPick(pick)
-        }}
-      />
-      <div className="ct-social-picker-grid">
-        {shown.map((link) => {
-          const Glyph = iconForPlatform(link.label, link.icon)
-          return (
-            <button
-              key={link.id}
-              type="button"
-              className={`ct-social-picker-tile${link.id === current ? ' selected' : ''}`}
-              title={link.label}
-              aria-label={link.label}
-              aria-pressed={link.id === current}
-              onClick={() => onPick(link.label)}
-            ><Glyph /></button>
-          )
-        })}
-      </div>
-      {needle && shown.length === 0 && (
-        <button type="button" className="ct-social-picker-custom" onClick={() => onPick(query.trim())}>
-          {uiText('contacts.social.useCustom', { p0: query.trim() })}
-        </button>
-      )}
+    <span className="ct-select-wrap ct-label-select">
+    <SelectField
+      value={match ?? saved}
+      ariaLabel={uiText(`contacts.form.label.${kind}`)}
+      placeholder={uiText('contacts.form.chooseLabel')}
+      options={options}
+      onChange={(next) => { if (next === EDIT_OPTION) void api.workspace.openSettings('plugin:contacts#social'); else onChange(next) }}
+    />
+    </span>
+  )
+}
+
+/** A row with `type` set, or without it for no label. */
+function withType(method: ContactMethod, type: string): ContactMethod {
+  const { type: _previous, ...rest } = method
+  return type ? { ...rest, type } : rest
+}
+
+/** One input of a multi-input row, captioned with what it is for; on a narrow page the inputs stack. */
+function SubField({ label, children }: { label: string; children: ReactNode }): ReactElement {
+  return (
+    <div className="ct-subfield">
+      <span className="ct-subfield-label" aria-hidden="true">{label}</span>
+      {children}
     </div>
   )
 }
@@ -1020,20 +1038,20 @@ function Field({ label, full, children }: { label: string; full?: boolean; child
  * the card stores in ADR and shows a small map under the field; typed text stays
  * a plain address (17 Nov).
  */
-function PlaceList({ api, title, items, setItems, placeholder, labelPlaceholder }: {
+function PlaceList({ api, labels, title, items, setItems, placeholder }: {
   api: ValleyPluginApi
+  labels: readonly string[]
   title: string
   items: ContactMethod[]
   setItems: (next: ContactMethod[]) => void
   placeholder: string
-  labelPlaceholder: string
 }): ReactElement {
   const { AddressField } = api.ui.settings
   return (
     <div className="ct-rep">
       <div className="ct-form-section-title">{title}</div>
       {items.map((m, i) => (
-        <div className="ct-rep-row ct-place-row" key={i}>
+        <div className="ct-rep-row ct-method-row ct-place-row" key={i}>
           <AddressField className="ct-address" ariaLabel={title} placeholder={placeholder} preview
             value={m.place ? { text: m.value, place: m.place } : m.value}
             onChange={(next) => {
@@ -1041,9 +1059,8 @@ function PlaceList({ api, title, items, setItems, placeholder, labelPlaceholder 
               const stored = storedAddressPlace(next.place)
               setItems(replace(items, i, stored ? { ...rest, value: next.text, place: stored } : { ...rest, value: next.text }))
             }} />
-          <input className="ct-input ct-rep-type" placeholder={labelPlaceholder} value={m.type ?? ''}
-            onChange={(e) => setItems(replace(items, i, { ...m, type: val(e) }))} />
-          <button className="ct-rep-del" onClick={() => setItems(remove(items, i))}><X /></button>
+          <LabelSelect api={api} kind="place" labels={labels} value={m.type ?? ''} onChange={(type) => setItems(replace(items, i, withType(m, type)))} />
+          <button className="ct-rep-del" aria-label={uiText('contacts.form.removeRow')} title={uiText('contacts.form.removeRow')} onClick={() => setItems(remove(items, i))}><X /></button>
         </div>
       ))}
       <button className="ct-rep-add" onClick={() => setItems([...items, { value: '' }])}><Plus /> {uiText('auto.61cc55aa0453')}{' '}{title.toLowerCase()}</button>
@@ -1051,23 +1068,24 @@ function PlaceList({ api, title, items, setItems, placeholder, labelPlaceholder 
   )
 }
 
-function MethodList({ title, items, setItems, placeholder, labelPlaceholder }: {
+function MethodList({ api, kind, labels, title, items, setItems, placeholder }: {
+  api: ValleyPluginApi
+  kind: 'phone' | 'email'
+  labels: readonly string[]
   title: string
   items: ContactMethod[]
   setItems: (next: ContactMethod[]) => void
   placeholder: string
-  labelPlaceholder: string
 }): ReactElement {
   return (
     <div className="ct-rep">
       <div className="ct-form-section-title">{title}</div>
       {items.map((m, i) => (
-        <div className="ct-rep-row" key={i}>
-          <input className="ct-input" placeholder={placeholder} value={m.value}
+        <div className="ct-rep-row ct-method-row" key={i}>
+          <input className="ct-input" placeholder={placeholder} aria-label={title} value={m.value}
             onChange={(e) => setItems(replace(items, i, { ...m, value: val(e) }))} />
-          <input className="ct-input ct-rep-type" placeholder={labelPlaceholder} value={m.type ?? ''}
-            onChange={(e) => setItems(replace(items, i, { ...m, type: val(e) }))} />
-          <button className="ct-rep-del" onClick={() => setItems(remove(items, i))}><X /></button>
+          <LabelSelect api={api} kind={kind} labels={labels} value={m.type ?? ''} onChange={(type) => setItems(replace(items, i, withType(m, type)))} />
+          <button className="ct-rep-del" aria-label={uiText('contacts.form.removeRow')} title={uiText('contacts.form.removeRow')} onClick={() => setItems(remove(items, i))}><X /></button>
         </div>
       ))}
       <button className="ct-rep-add" onClick={() => setItems([...items, { value: '' }])}><Plus /> {uiText('auto.61cc55aa0453')}{' '}{title.toLowerCase()}</button>

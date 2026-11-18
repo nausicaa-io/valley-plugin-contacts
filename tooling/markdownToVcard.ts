@@ -87,7 +87,7 @@ export function markdownContact(relPath: string, raw: string): MarkdownContact |
     phone: methods(frontmatter.phone),
     place: methods(frontmatter.place),
     socialMedia,
-    websites: list(frontmatter.websites).map(text).filter(Boolean),
+    websites: list(frontmatter.websites).map(text).filter(Boolean).map((value) => ({ value })),
     events: list(frontmatter.events).map(text).filter(Boolean),
     lastContact: text(frontmatter.lastContact),
     profession: text(frontmatter.profession),

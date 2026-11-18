@@ -1,8 +1,9 @@
 import type { ReactElement } from 'react'
 import type { SettingsReorderHandleProps, SettingsReorderItemProps } from '@valley/plugin-sdk'
 import { React, api } from './runtime'
-import type { ContactGroup, SocialLink } from './types'
-import { getSettings } from './data'
+import type { Contact, ContactGroup, ContactLabelKind, SocialLink } from './types'
+import { CONTACT_LABEL_KINDS } from './types'
+import { DEFAULT_CONTACT_LABELS, getSettings, LABEL_LIMIT, LABEL_NAME_MAX, LABELS_KEY, normalizeLabelList, useContactLabels } from './data'
 import { iconForPlatform } from './social'
 import { CONTACT_ICON_FOLDER, ContactIconPicker, useContactIcons } from './contactIcons'
 import { useContacts } from './store'
@@ -143,7 +144,7 @@ function SocialRow({ social, overClass, itemProps, handleProps, onUpdate, onRemo
 
 function SocialSettings(): ReactElement {
   useContactIcons()
-  const { Button, Section, useReorderDrag } = api.ui.settings
+  const { IconButton, Section, useReorderDrag } = api.ui.settings
   const [socials, commitSocials] = useSocials()
   const latest = React.useRef(socials)
   latest.current = socials
@@ -231,10 +232,133 @@ function SocialSettings(): ReactElement {
             onCommit={(value) => { newUrl.current = value }}
             onEnter={add}
           />
-          <Button onClick={add}>{uiText('auto.61cc55aa0453')}</Button>
+          <IconButton className="ct-settings-add" ariaLabel={uiText('contacts.settings.addPlatform')} title={uiText('contacts.settings.addPlatform')} onClick={add}><Plus /></IconButton>
         </div>
         {duplicate && <span className="settings-empty-text">{uiText('contacts.settings.groupDuplicate')}</span>}
         {reorder.liveRegion}
+      </div>
+    </Section>
+  )
+}
+
+const LABEL_TITLES: Record<ContactLabelKind, string> = {
+  phone: 'contacts.settings.labels.phone', email: 'contacts.settings.labels.email', place: 'contacts.settings.labels.place', website: 'contacts.settings.labels.website'
+}
+
+/** How many cards use `label` on a row of `kind`. */
+function labelUsage(contacts: readonly Contact[], kind: ContactLabelKind, label: string): number {
+  const key = label.trim().toLowerCase()
+  const rows = (contact: Contact) => kind === 'phone' ? contact.phone : kind === 'email' ? contact.email : kind === 'place' ? contact.place : contact.websites
+  return contacts.filter((contact) => rows(contact).some((row) => (row.type ?? '').trim().toLowerCase() === key)).length
+}
+
+/** One label list: grip, name, usage, remove, and an add row on the same columns. Its order is the dropdown's order. */
+function LabelList({ kind, labels, contacts, onSave }: {
+  kind: ContactLabelKind
+  labels: string[]
+  contacts: readonly Contact[]
+  onSave: (kind: ContactLabelKind, next: string[]) => void
+}): ReactElement {
+  const { IconButton, useReorderDrag } = api.ui.settings
+  const draft = React.useRef('')
+  const [addKey, setAddKey] = React.useState(0)
+  const [duplicate, setDuplicate] = React.useState(false)
+  const title = uiText(LABEL_TITLES[kind])
+  const taken = (name: string, except?: number): boolean => labels.some((label, index) => index !== except && label.toLowerCase() === name.trim().toLowerCase())
+  const add = (): void => {
+    const name = draft.current.trim().slice(0, LABEL_NAME_MAX)
+    if (!name || labels.length >= LABEL_LIMIT) return
+    if (taken(name)) { setDuplicate(true); return }
+    onSave(kind, [...labels, name])
+    draft.current = ''
+    setDuplicate(false)
+    setAddKey((key) => key + 1)
+  }
+  const reorder = useReorderDrag<string>({
+    items: labels,
+    getId: (label) => label,
+    getLabel: (label) => label,
+    onReorder: (next) => onSave(kind, next)
+  })
+  const isDefault = JSON.stringify(labels) === JSON.stringify(DEFAULT_CONTACT_LABELS[kind])
+  return (
+    <div className="ct-label-list" role="list" aria-label={title}>
+      <div className="ct-label-list-head">
+        <span className="ct-label-list-title">{title}</span>
+        {!isDefault && <button type="button" className="ct-label-reset" onClick={() => onSave(kind, [...DEFAULT_CONTACT_LABELS[kind]])}>{uiText('contacts.settings.labels.reset')}</button>}
+      </div>
+      {labels.map((label, index) => {
+        const handleProps = reorder.getHandleProps(label)
+        const count = labelUsage(contacts, kind, label)
+        return (
+          <div role="listitem" key={label} className={`ct-social-setting-row ct-label-setting-row${reorder.overId === label ? ` drop-${reorder.dropPosition ?? 'before'}` : ''}`} {...reorder.getItemProps(label)}>
+            <button {...handleProps} className={`${handleProps.className ?? ''} ct-social-grip ct-social-settings-grip`} title={uiText('contacts.social.reorder')}><GripVertical /></button>
+            <CommitTextField
+              key={`label:${label}`}
+              initial={label}
+              spellCheck
+              ariaLabel={uiText('contacts.settings.labels.name', { p0: title })}
+              onCommit={(value) => {
+                const name = value.trim().slice(0, LABEL_NAME_MAX)
+                if (!name || taken(name, index)) return
+                onSave(kind, labels.map((entry, at) => at === index ? name : entry))
+              }}
+            />
+            <span className="settings-group-usage" title={uiText('contacts.settings.labels.usage', { count })}>{count}</span>
+            <api.ui.settings.IconButton
+              className="ct-group-remove"
+              variant="ghost"
+              ariaLabel={uiText('auto.b8c425a1937d', { p0: label })}
+              title={uiText('contacts.settings.labels.remove')}
+              onClick={() => onSave(kind, labels.filter((_, at) => at !== index))}
+            ><X /></api.ui.settings.IconButton>
+          </div>
+        )
+      })}
+      <div className="ct-social-setting-row ct-label-setting-row ct-social-setting-add" key={`add:${addKey}`}>
+        <span className="ct-social-grip ct-social-settings-grip" aria-hidden="true" />
+        <CommitTextField
+          initial=""
+          invalid={duplicate}
+          spellCheck
+          placeholder={uiText('contacts.settings.labels.new')}
+          ariaLabel={uiText('contacts.settings.labels.newIn', { p0: title })}
+          onType={(value) => { draft.current = value; setDuplicate(false) }}
+          onCommit={(value) => { draft.current = value }}
+          onEnter={add}
+        />
+        <span aria-hidden="true" />
+        <IconButton className="ct-settings-add" ariaLabel={uiText('contacts.settings.labels.addIn', { p0: title })} title={uiText('contacts.settings.labels.add')} disabled={labels.length >= LABEL_LIMIT} onClick={add}><Plus /></IconButton>
+      </div>
+      {duplicate && <span className="settings-empty-text">{uiText('contacts.settings.labels.duplicate')}</span>}
+      {reorder.liveRegion}
+    </div>
+  )
+}
+
+/** The labels the phone, email, address and website dropdowns offer (18 Nov). */
+function LabelSettings(): ReactElement {
+  const { Section } = api.ui.settings
+  const saved = useContactLabels(api)
+  // A save shows at once, before the settings change comes back.
+  const [labels, setLabels] = React.useState(saved)
+  React.useEffect(() => setLabels(saved), [saved])
+  const latest = React.useRef(labels)
+  latest.current = labels
+  const contacts = useContacts(api).contacts
+  const save = React.useCallback((kind: ContactLabelKind, next: string[]): void => {
+    const updated = { ...latest.current, [kind]: normalizeLabelList(next) }
+    latest.current = updated
+    setLabels(updated)
+    void api.settings.set(LABELS_KEY, updated)
+  }, [])
+  return (
+    <Section title={uiText('contacts.settings.labels')}>
+      <div className="settings-colorrules ct-social-settings ct-label-settings">
+        <span className="settings-toggle-text">
+          <span className="settings-toggle-desc">{uiText('contacts.settings.labelsDesc')}</span>
+        </span>
+        {CONTACT_LABEL_KINDS.map((kind) => <LabelList key={kind} kind={kind} labels={labels[kind]} contacts={contacts} onSave={save} />)}
       </div>
     </Section>
   )
@@ -475,17 +599,27 @@ function GeneralSettings(): ReactElement {
           />
         </Row>
       </Section>
+    </>
+  )
+}
+
+/** The Social media sub-page (18 Nov): the platforms, then the labels of phone numbers, emails, addresses and websites. */
+function SocialMediaSettings(): ReactElement {
+  return (
+    <>
       <SocialSettings />
+      <LabelSettings />
     </>
   )
 }
 
 /**
  * `contacts.settings`: rendered once per manifest `settingsSections` id, and once for
- * the main page, which also holds the social platforms (17 Nov). Any other id,
- * such as the retired `social` page, shows the main page.
+ * the main page (the Contacts folder). Social media (platforms and labels) and
+ * Groups are the sub-pages (18 Nov); any other id shows the main page.
  */
 export function Settings({ section }: { section?: string }): ReactElement {
   if (section === 'groups') return <GroupsSettings />
+  if (section === 'social') return <SocialMediaSettings />
   return <GeneralSettings />
 }

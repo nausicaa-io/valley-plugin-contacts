@@ -213,8 +213,21 @@ const contactsResult = {
     "websites": {
       "type": "array",
       "items": {
-        "type": "string",
-        "maxLength": 65536
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "type": {
+            "type": "string",
+            "maxLength": 65536
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "additionalProperties": false
       },
       "maxItems": 1000
     },
@@ -380,8 +393,10 @@ const stringSchema = { type: 'string' }
 const rowSchema = (keys: string[]) => ({ type: 'object', properties: Object.fromEntries(keys.map((key) => [key, stringSchema])), additionalProperties: false })
 export const contactValuesSchema = { type: 'object', additionalProperties: false, properties: {
   ...Object.fromEntries([...contactTextFields, 'fileName', 'notes'].map((key) => [key, stringSchema])),
-  ...Object.fromEntries(['groups', 'websites'].map((key) => [key, { type: 'array', items: stringSchema }])),
+  groups: { type: 'array', items: stringSchema },
   ...Object.fromEntries(['phone', 'email', 'place'].map((key) => [key, { type: 'array', items: { ...rowSchema(['value', 'type']), required: ['value'] } }])),
+  // A plain URL string is still accepted and read as an unlabelled website (18 Nov).
+  websites: { type: 'array', items: { anyOf: [stringSchema, { ...rowSchema(['value', 'type']), required: ['value'] }] } },
   organization: { type: 'array', items: rowSchema(['name', 'title', 'dept']) },
   socialMedia: { type: 'array', items: rowSchema(['platform', 'handle', 'url']) },
   relations: { type: 'array', items: { ...rowSchema(['to', 'type', 'role']), required: ['to', 'type'], properties: { to: stringSchema, type: { type: 'string', enum: [...RELATION_TYPES] }, role: stringSchema } } }
@@ -397,8 +412,14 @@ export function parseContactValues(raw: unknown): Partial<Contact> & { notes?: s
       if (typeof value !== 'string') throw new Error(`Expected text for "${key}".`)
     } else {
       if (!Array.isArray(value)) throw new Error(`Expected a list for "${key}".`)
-      if (key === 'groups' || key === 'websites') {
+      if (key === 'groups') {
         if (!value.every((entry) => typeof entry === 'string')) throw new Error(`Expected text entries for "${key}".`)
+      } else if (key === 'websites') {
+        values.websites = value.map((entry) => {
+          if (typeof entry === 'string') return { value: entry }
+          if (!entry || typeof entry !== 'object' || Array.isArray(entry) || typeof entry.value !== 'string' || Object.entries(entry).some(([field, text]) => !['value', 'type'].includes(field) || typeof text !== 'string')) throw new Error('Invalid "websites" entry.')
+          return entry
+        })
       } else {
         const fields = key === 'organization' ? ['name', 'title', 'dept'] : key === 'socialMedia' ? ['platform', 'handle', 'url'] : key === 'relations' ? ['to', 'type', 'role'] : ['value', 'type']
         for (const entry of value) {

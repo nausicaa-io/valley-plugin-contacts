@@ -142,7 +142,7 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
         if (action.type !== 'link-open') return
         const i = action.index
         if (action.kind === 'relation') { const path = relatedPath(i); if (!path) throw Object.assign(new Error('This related Contact target is unavailable.'), { outcome: 'not-applied' }); await context.validate(); if (relatedPath(i) !== path) throw Object.assign(new Error('The related Contact target changed while authorization was pending.'), { outcome: 'not-applied' }); store.openContact(path); return }
-        const value = action.kind === 'phone' ? contact.phone[i]?.value : action.kind === 'email' ? contact.email[i]?.value : action.kind === 'website' ? contact.websites[i] : action.kind === 'address' ? contact.place[i]?.value : contact.socialMedia[i] ? resolveSocial(contact.socialMedia[i], socialLinks).href : null
+        const value = action.kind === 'phone' ? contact.phone[i]?.value : action.kind === 'email' ? contact.email[i]?.value : action.kind === 'website' ? contact.websites[i]?.value : action.kind === 'address' ? contact.place[i]?.value : contact.socialMedia[i] ? resolveSocial(contact.socialMedia[i], socialLinks).href : null
         if (!value) throw Object.assign(new Error('This exact reading Contact link is unavailable.'), { outcome: 'not-applied' })
         await context.validate()
         const opened = await api.links.open(action.kind === 'address' ? { category: 'location', value } : action.kind === 'phone' ? { category: 'phone', value } : action.kind === 'email' ? { category: 'email', value } : value)
@@ -258,6 +258,8 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
         )}
       </div>
 
+      {/* On a wide page the sections sit side by side; on a narrow one they stack (18 Nov). */}
+      <div className="ct-detail-sections">
       {contact.relations.length > 0 && (
         <div className="ct-section">
           <div className="ct-section-title">{uiText('auto.6519fe11ef74')}</div>
@@ -287,7 +289,7 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
         ...contact.phone.map((m) => ({ icon: <Phone />, value: m.value, label: m.type, href: `tel:${m.value}`, link: { category: 'phone', value: m.value } })),
         ...contact.email.map((m) => ({ icon: <Mail />, value: m.value, label: m.type, href: `mailto:${m.value}`, link: { category: 'email', value: m.value } })),
         ...contact.place.map((m) => ({ icon: <MapPin />, value: m.value, label: m.type, onClick: () => openAddress(m.value) })),
-        ...contact.websites.map((w) => ({ icon: <Link />, value: w, href: w })),
+        ...contact.websites.map((w) => ({ icon: <Link />, value: w.value, label: w.type, href: w.value })),
         ...(contact.birthdate ? [{ icon: <Cake />, value: formatContactBirthdate(contact.birthdate, dateFormat), label: 'birthday' }] : [])
       ]} />
 
@@ -309,8 +311,9 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
           label: [o.title, o.dept].filter(Boolean).join(' · ') || undefined
         }))} />
       )}
+      </div>
 
-      <div className="ct-section">
+      <div className="ct-section ct-detail-notes">
         <div className="ct-section-title">{uiText('auto.70440046a3dc')}</div>
         <ContactNotes contact={contact} />
       </div>

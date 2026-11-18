@@ -26,7 +26,7 @@ const editable = z.object({
   relations: z.array(z.object({ to: text, type: z.enum(['family', 'partner', 'friend', 'school', 'work', 'party', 'military', 'other']), role: text.optional() }).strict()).max(1000),
   organization: z.array(z.object({ name: text.optional(), title: text.optional(), dept: text.optional() }).strict()).max(1000),
   email: z.array(method).max(1000), phone: z.array(method).max(1000), place: z.array(method).max(1000),
-  socialMedia: z.array(z.object({ platform: text.optional(), handle: text.optional(), url: text.optional() }).strict()).max(1000), websites: list, events: list,
+  socialMedia: z.array(z.object({ platform: text.optional(), handle: text.optional(), url: text.optional() }).strict()).max(1000), websites: z.array(z.union([method, text.transform(value => ({ value }))])).max(1000), events: list,
   lastContact: text, profession: text, note: z.string().max(NOTE_LIMIT)
 }).strict()
 export const contactSchema = editable.extend({ relPath: path, fileName: text, displayName: text, uid: text, photo: z.string().max(4 * 1024 * 1024) }).strict()

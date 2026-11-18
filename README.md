@@ -6,10 +6,22 @@ Address book over vCard files in your realm: ordered groups with colors, cover-a
 
 Each person is one `.vcf` file (vCard 4.0, RFC 6350) in the Contacts folder (setting `contactsRoot`, empty by default; an empty value or `/` scans the whole realm). Cards exported by other address books (vCard 2.1, 3.0 and 4.0) are read as they are. Opening a `.vcf` shows the contact. Command-E (Ctrl-E on Windows/Linux) switches between Reading and a full structured Editing view. Footer details offers the same mode switch and configurable name, groups, birthday, email, phone, organization, profession, nickname, address, and website fields. Contact editing stays in the main view; the right sidebar has no Contact editing tab. Edits autosave with guarded writes, and switching to Reading keeps pending saves alive.
 
-- Names, nickname, birthday (`BDAY`, with or without a year), groups (`CATEGORIES`), phone, email, addresses (`ADR` with `LABEL`), organizations (`ORG`/`TITLE`), profession (`ROLE`), websites, social profiles (`SOCIALPROFILE`) and Markdown notes (`NOTE`) use standard properties.
+- Names, nickname, birthday (`BDAY`, with or without a year), groups (`CATEGORIES`), phone, email, addresses (`ADR` with `LABEL`), organizations (`ORG`/`TITLE`), profession (`ROLE`), websites (`URL`), social profiles (`SOCIALPROFILE`) and Markdown notes (`NOTE`) use standard properties. Phone, email, address and website entries keep their label in `TYPE`.
 - Relations are `RELATED` entries pointing at the other card's `UID`, so renaming a file never breaks them. Cover image, events and last contact use `X-VALLEY-*` properties.
 - An edit rewrites only the properties it changed. Unknown properties, other apps' extensions, embedded photos and further cards in the same file are kept.
 - The file name follows the person's name while it still matches it, through the host's guarded rename, which also repairs links to the file.
+
+## Map
+
+Contacts provides `contacts.places`: every contact with its addresses, coordinates included for addresses picked from a suggestion. The Map plugin shows them in its Contacts tab and on the map.
+
+## Editing
+
+The contact page and its editor use the whole width of the pane: on a wide pane the sections sit side by side, on a narrow one they stack and every row stacks its own inputs. The label of a phone number, email, address or website is picked from a dropdown; the social platform is picked by name from the platforms in Contacts settings; each organization input (Organization, Job title, Department) and relation input (Person, Relation, Role) is captioned with what it is for. A saved label or platform that is not in the list stays selectable, and **Edit labels…** / **Edit platforms…** at the end of each dropdown open the Social media settings. The social row shows the chosen platform's icon beside its dropdown.
+
+No two cards share a file name in one folder, regardless of case: a file name (typed, or following the person's name) that another card of the folder already has is refused with a note under the field, and the file keeps its current name until the name is changed; a new card is not created under it.
+
+Contacts settings has two sub-pages: **Social media** (the platforms, then the labels) and **Groups**; the main page holds the Contacts folder. **Labels** holds one list per kind (Phone, Email, Address, Website), in the order the dropdowns offer them. Every list starts with Family, Work and School, followed by the usual labels of that kind; labels can be added, renamed, removed, reordered and restored to the defaults. Each row shows how many contacts use it; renaming or removing a label leaves the cards unchanged. The lists are saved in the `labels` setting.
 
 `tooling/markdownToVcard.ts` converts former Markdown contact notes once: `npx vite-node tooling/markdownToVcard.ts -- <folder>` reports what it would do; add `--write` (and `--remove-markdown`) to convert. It is not part of the packaged plugin.
 

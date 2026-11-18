@@ -31,6 +31,11 @@ export interface ContactMethod {
   place?: AddressPlace
 }
 
+/** The labelled lists whose label is picked from Settings → Contacts → Labels (18 Nov). */
+export const CONTACT_LABEL_KINDS = ['phone', 'email', 'place', 'website'] as const
+export type ContactLabelKind = (typeof CONTACT_LABEL_KINDS)[number]
+export type ContactLabels = Record<ContactLabelKind, string[]>
+
 /** A workplace / affiliation. */
 export interface Organization {
   name?: string
@@ -91,7 +96,8 @@ export interface Contact {
   phone: ContactMethod[]
   place: ContactMethod[]
   socialMedia: Social[]
-  websites: string[]
+  /** Web addresses, each with an optional label (`URL;TYPE=…`, 18 Nov). */
+  websites: ContactMethod[]
   events: string[]
   lastContact: string
   profession: string

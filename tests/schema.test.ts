@@ -28,9 +28,9 @@ describe('writing vCard 4.0', () => {
     const contact = contactAt('Meadow/Orbit/Fern Blüten.vcf', {
       firstName: 'Fern', lastName: 'Blüten', nickname: 'Farn', birthdate: '1990-05-12', groups: ['plants', 'Wald, Wiese'],
       cover: 'fern.jpg', profession: 'Botanist',
-      email: [{ value: 'fern@biodiversity.example', type: 'Field' }], phone: [{ value: '+99 100 000 00', type: 'Mobile' }],
+      email: [{ value: 'fern@biodiversity.example', type: 'Field' }], phone: [{ value: '+99 100 000 00', type: 'Mobile' }, { value: '+99 100 000 01', type: 'Work mobile' }],
       place: [{ value: 'Fernweg 1; 12345 Mossville', type: 'Home' }], organization: [{ name: 'Herbarium', dept: 'Mosses', title: 'Curator' }],
-      websites: ['https://example.org/fern'], socialMedia: [{ platform: 'instagram', handle: 'fern', url: 'https://instagram.com/fern' }],
+      websites: [{ value: 'https://example.org/fern', type: 'Blog' }, { value: 'https://fern.example' }], socialMedia: [{ platform: 'instagram', handle: 'fern', url: 'https://instagram.com/fern' }],
       relations: [{ to: uidFor('Meadow/Orbit/Moss.vcf'), type: 'family', role: 'Parent' }, { to: 'Oak Elder', type: 'friend' }],
       events: ['Met at the Moss survey'], lastContact: '2026-01-02', note: 'Grüße aus Wäldern.\n\n- [[Moss]] knows her'
     })
@@ -48,6 +48,8 @@ describe('writing vCard 4.0', () => {
     expect(unfolded).toContain('ADR;TYPE=home;LABEL="Fernweg 1; 12345 Mossville":;;Fernweg 1\\; 12345 Mossville;;;;')
     expect(unfolded).toContain('ORG:Herbarium;Mosses')
     expect(unfolded).toContain('TITLE:Curator')
+    expect(unfolded).toContain('URL;TYPE=Blog:https://example.org/fern')
+    expect(unfolded).toContain('URL:https://fern.example')
     expect(unfolded).toContain('ROLE:Botanist')
     expect(unfolded).toContain('SOCIALPROFILE;SERVICE-TYPE=instagram;USERNAME=fern:https://instagram.com/fern')
     expect(unfolded).toContain(`RELATED;TYPE=kin;X-ROLE=Parent:${uidFor('Meadow/Orbit/Moss.vcf')}`)
@@ -133,7 +135,7 @@ describe('reading other address books', () => {
       organization: [{ name: 'Seed Bank', dept: 'Realm', title: 'Keeper' }], email: [{ value: 'mira@seed.example', type: 'Other' }],
       phone: [{ value: '+99 111 111 11', type: 'Mobile' }], place: [{ value: 'Moosweg 4, 12345 Mossville, Fernland', type: 'Home' }],
       relations: [{ to: 'Fern Blüten', type: 'family', role: 'Sister' }], socialMedia: [{ platform: 'twitter', handle: 'mira', url: 'http://twitter.com/mira' }],
-      websites: ['https://mira.example'], groups: ['Seeds', 'Friends'], photo: 'data:image/jpeg;base64,AAAA', uid: ''
+      websites: [{ value: 'https://mira.example', type: 'Home' }], groups: ['Seeds', 'Friends'], photo: 'data:image/jpeg;base64,AAAA', uid: ''
     })
   })
 

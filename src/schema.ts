@@ -346,7 +346,12 @@ export function contactFromCard(relPath: string, card: VCardCard): Contact {
       return [{ value, ...(type ? { type } : {}), ...(place ? { place } : {}) }]
     }),
     socialMedia: socials(card),
-    websites: all(card, 'URL').map((entry) => clean(textValue(entry))).filter(Boolean),
+    websites: all(card, 'URL').flatMap((entry) => {
+      const value = clean(textValue(entry))
+      if (!value) return []
+      const type = labelOf(card, entry)
+      return [type ? { value, type } : { value }]
+    }),
     events: all(card, 'X-VALLEY-EVENT').map((entry) => clean(textValue(entry))).filter(Boolean),
     lastContact: clean(first(card, 'X-VALLEY-LASTCONTACT') ? textValue(first(card, 'X-VALLEY-LASTCONTACT')!) : ''),
     profession: clean(first(card, 'ROLE') ? textValue(first(card, 'ROLE')!) : ''),
@@ -404,7 +409,7 @@ function fieldProperties(contact: Contact, key: FieldKey): PropertyInput[] {
     case 'place':
       return contact.place.map(addressProperty)
     case 'websites':
-      return contact.websites.filter((url) => url.trim()).map((url) => ({ name: 'URL', value: url.trim().replace(/\r?\n/g, '') }))
+      return contact.websites.filter((url) => url.value.trim()).map((url) => ({ name: 'URL', params: typeParam(url.type), value: url.value.trim().replace(/\r?\n/g, '') }))
     case 'socialMedia':
       return contact.socialMedia.map((social) => {
         const params: Array<[string, string]> = []

@@ -13,7 +13,8 @@ import type { MountedPluginView, PluginIndexEntry } from '@valley/plugin-sdk'
 import { getContactIndex } from './indexOwner'
 import type { ValleyPluginApi } from '@valley/plugin-sdk'
 import type { TextDocumentRead } from '@valley/plugin-sdk/types'
-import type { Contact, ContactGroup, GroupNode, SocialLink } from './types'
+import type { Contact, ContactGroup, ContactLabels, GroupNode, SocialLink } from './types'
+import { CONTACT_LABEL_KINDS } from './types'
 import { CONTACT_EXTENSION, parseContactFile } from './schema'
 import { canonicalPlatform, defaultSocialLinks } from './social'
 
@@ -31,6 +32,42 @@ export interface ContactsSettings {
   /** Every shared and Contacts-only group, for a card's saved group colour. */
   allGroups: ContactGroup[]
   socials: SocialLink[]
+  /** The labels each labelled list offers in its dropdown, in this order (18 Nov). */
+  labels: ContactLabels
+}
+
+/** Settings key of the label lists. */
+export const LABELS_KEY = 'labels'
+export const LABEL_LIMIT = 60
+export const LABEL_NAME_MAX = 60
+
+/** The labels a realm starts with: Family, Work and School first in every list, then the usual ones for that kind (18 Nov). */
+export const DEFAULT_CONTACT_LABELS: Readonly<ContactLabels> = {
+  phone: ['Family', 'Work', 'School', 'Mobile', 'Home', 'Main', 'Work mobile', 'Fax', 'Pager', 'Emergency', 'Other'],
+  email: ['Family', 'Work', 'School', 'Personal', 'Home', 'University', 'Billing', 'Other'],
+  place: ['Family', 'Work', 'School', 'Home', 'University', 'Vacation home', 'Billing', 'Shipping', 'Other'],
+  website: ['Family', 'Work', 'School', 'Personal', 'Blog', 'Portfolio', 'Company', 'Shop', 'Other']
+}
+
+/** Trimmed, non-empty, case-insensitively unique labels. */
+export function normalizeLabelList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of value) {
+    const label = typeof raw === 'string' ? raw.trim().slice(0, LABEL_NAME_MAX) : ''
+    if (!label || seen.has(label.toLowerCase())) continue
+    seen.add(label.toLowerCase())
+    out.push(label)
+    if (out.length >= LABEL_LIMIT) break
+  }
+  return out
+}
+
+/** The saved label lists; a list that was never saved shows the defaults. An emptied list stays empty. */
+export function normalizeContactLabels(value: unknown): ContactLabels {
+  const saved = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+  return Object.fromEntries(CONTACT_LABEL_KINDS.map((kind) => [kind, Array.isArray(saved[kind]) ? normalizeLabelList(saved[kind]) : [...DEFAULT_CONTACT_LABELS[kind]]])) as ContactLabels
 }
 
 export function normalizeGroupName(name: string): string {
@@ -68,7 +105,8 @@ export function getSettings(owner = api): ContactsSettings {
     contactsRoot: scoped,
     groups: getContactGroups(owner),
     allGroups: getAllContactGroups(owner),
-    socials: socials.length ? socials : defaultSocialLinks()
+    socials: socials.length ? socials : defaultSocialLinks(),
+    labels: normalizeContactLabels(s[LABELS_KEY])
   }
 }
 
@@ -447,3 +485,11 @@ export const saveContact = (contact: Contact, options: documents.SaveContactOpti
 export const deleteContact = (path: string, owner = api, document?: TextDocumentRead) => documents.deleteContact(path, documentOwner(owner), document)
 export { sanitizeFileName, contactFileBase, contactTrashWarning, UNTITLED_FILE_BASE } from './contactDocuments'
 export type { SaveContactOptions, ContactSave } from './contactDocuments'
+
+/** The label lists, following Settings while a view shows them. */
+export function useContactLabels(owner = api): ContactLabels {
+  const React = owner.React
+  const read = React.useCallback(() => JSON.stringify(normalizeContactLabels(owner.settings.get()[LABELS_KEY])), [owner])
+  const json = React.useSyncExternalStore(React.useCallback((listener: () => void) => owner.settings.subscribe(listener), [owner]), read, read)
+  return React.useMemo(() => JSON.parse(json) as ContactLabels, [json])
+}

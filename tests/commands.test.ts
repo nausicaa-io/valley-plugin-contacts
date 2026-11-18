@@ -506,6 +506,7 @@ describe('contacts explicit field edits', () => {
     expect(result.ok).toBe(true)
     expect(lastWrite(mock).content).toContain('01234')
     expect(lastWrite(mock).content).toContain('Woodland observation')
+    expect(lastWrite(mock).content).toContain('URL:https://example.org')
     expect(mock.busUndo).toHaveLength(1)
     await mock.busUndo[0].undo()
     expect(lastWrite(mock).content).toContain('0000000000')
