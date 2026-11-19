@@ -9,6 +9,7 @@ import type { Contact } from './types'
 import { getStore } from './store'
 import { uiText } from './localization'
 import { setContactMode } from './contactView'
+import { getSettings } from './data'
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -28,7 +29,7 @@ function birthdayParts(value: string): { year?: number; month: number; day: numb
 const pad = (value: number): string => String(value).padStart(2, '0')
 
 /** Every birthday occurrence inside an inclusive `YYYY-MM-DD` range, sorted. */
-export function birthdayItems(contacts: readonly Contact[], startDate: string, endDate: string): CalendarSourceItem[] {
+export function birthdayItems(contacts: readonly Contact[], startDate: string, endDate: string, color?: string): CalendarSourceItem[] {
   if (!ISO_DATE.test(startDate) || !ISO_DATE.test(endDate) || startDate > endDate) return []
   const firstYear = Number(startDate.slice(0, 4))
   const lastYear = Number(endDate.slice(0, 4))
@@ -49,6 +50,8 @@ export function birthdayItems(contacts: readonly Contact[], startDate: string, e
         date,
         filePath: contact.relPath,
         icon: 'cake',
+        // The birthday's colour from Settings → Contacts → Labels (19 Nov).
+        ...(color ? { color } : {}),
         readOnly: true,
         ...(contact.groups[0] ? { group: contact.groups[0] } : {}),
         ...(age !== undefined ? { note: `${uiText('contacts.calendar.age')} ${age}` } : {})
@@ -89,7 +92,7 @@ export function registerBirthdaySource(api: ValleyPluginApi): () => void {
         if (previous.startDate !== startDate || previous.endDate !== endDate || previous.limit !== limit || previous.revision !== currentRevision() || typeof previous.offset !== 'number') throw new Error('Calendar source cursor is stale or belongs to another range.')
         offset = previous.offset
       }
-      const all = birthdayItems(store.getSnapshot().contacts, startDate, endDate)
+      const all = birthdayItems(store.getSnapshot().contacts, startDate, endDate, getSettings(api).birthday.color)
       const items = all.slice(offset, offset + limit)
       const next = offset + items.length
       const published = currentRevision()
@@ -118,7 +121,7 @@ export function registerBirthdaySource(api: ValleyPluginApi): () => void {
     configure: () => api.workspace.openOwnSettings()
   }
   const refresh = (): void => {
-    const next = JSON.stringify(store.getSnapshot().contacts.filter((contact) => contact.birthdate).map((contact) => [contact.relPath, contact.displayName, contact.birthdate, contact.groups[0] ?? '']))
+    const next = JSON.stringify([getSettings(api).birthday, store.getSnapshot().contacts.filter((contact) => contact.birthdate).map((contact) => [contact.relPath, contact.displayName, contact.birthdate, contact.groups[0] ?? ''])])
     if (next === signature) return
     signature = next
     revision++
@@ -126,11 +129,13 @@ export function registerBirthdaySource(api: ValleyPluginApi): () => void {
   }
   refresh()
   const offStore = store.subscribe(refresh)
+  const offSettings = api.settings.subscribe(refresh)
   const offLanguage = api.ui.onLanguageChanged(() => { revision++; api.interop.state.publish(CALENDAR_ITEM_SOURCE_REVISION_V1, revision) })
   const offSource = api.interop.services.provide(CALENDAR_ITEM_SOURCE_V2, source)
   return () => {
     active = false
     offStore()
+    offSettings()
     offLanguage()
     offSource()
     api.interop.state.publish(CALENDAR_ITEM_SOURCE_REVISION_V1, null)

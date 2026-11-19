@@ -134,33 +134,158 @@
               "type": "array",
               "maxItems": 60,
               "items": {
-                "type": "string",
-                "maxLength": 60
+                "type": "union",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "maxLength": 60
+                      },
+                      "icon": {
+                        "type": "string",
+                        "maxLength": 81
+                      },
+                      "color": {
+                        "type": "string",
+                        "maxLength": 48
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
               }
             },
             "email": {
               "type": "array",
               "maxItems": 60,
               "items": {
-                "type": "string",
-                "maxLength": 60
+                "type": "union",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "maxLength": 60
+                      },
+                      "icon": {
+                        "type": "string",
+                        "maxLength": 81
+                      },
+                      "color": {
+                        "type": "string",
+                        "maxLength": 48
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
               }
             },
             "place": {
               "type": "array",
               "maxItems": 60,
               "items": {
-                "type": "string",
-                "maxLength": 60
+                "type": "union",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "maxLength": 60
+                      },
+                      "icon": {
+                        "type": "string",
+                        "maxLength": 81
+                      },
+                      "color": {
+                        "type": "string",
+                        "maxLength": 48
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
               }
             },
             "website": {
               "type": "array",
               "maxItems": 60,
               "items": {
-                "type": "string",
-                "maxLength": 60
+                "type": "union",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "maxLength": 60
+                      },
+                      "icon": {
+                        "type": "string",
+                        "maxLength": 81
+                      },
+                      "color": {
+                        "type": "string",
+                        "maxLength": 48
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
               }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      {
+        "key": "birthdayStyle",
+        "label": "Birthday look",
+        "labelKey": "contacts.settings.birthday",
+        "type": "custom",
+        "settingsVisible": false,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "icon": {
+              "type": "string",
+              "maxLength": 81
+            },
+            "color": {
+              "type": "string",
+              "maxLength": 48
             }
           },
           "additionalProperties": false
@@ -6320,7 +6445,7 @@
     "storage": {
       "realm": true,
       "metadata": [
-        "assets/icons/contacts-icon"
+        "assets/icons/contact-icon"
       ]
     },
     "largeData": true,

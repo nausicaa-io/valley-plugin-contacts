@@ -242,7 +242,7 @@
   "contacts.form.label.place": "Address label",
   "contacts.form.label.website": "Website label",
   "contacts.settings.labels": "Labels",
-  "contacts.settings.labelsDesc": "The labels the phone, email, address and website dropdowns offer, in this order. Renaming or removing a label leaves the cards that use it unchanged.",
+  "contacts.settings.labelsDesc": "The labels the phone, email, address and website dropdowns offer, in this order, each with an icon and a colour: Map draws an address in its label's icon and colour, the dropdown shows the colour. Renaming or removing a label leaves the cards that use it unchanged.",
   "contacts.settings.labels.phone": "Phone",
   "contacts.settings.labels.email": "Email",
   "contacts.settings.labels.place": "Address",
@@ -258,5 +258,9 @@
   "contacts.settings.addPlatform": "Add platform",
   "contacts.settings.labels.add": "Add label",
   "contacts.settings.labels.addIn": "Add {{p0}} label",
-  "contacts.form.fileNameTaken": "{{p0}}.vcf already exists in this folder. Choose another name; the file keeps its current name until then."
+  "contacts.form.fileNameTaken": "{{p0}}.vcf already exists in this folder. Choose another name; the file keeps its current name until then.",
+  "contacts.settings.labels.color": "Colour of {{p0}}",
+  "contacts.settings.labels.newColor": "Colour of the new {{p0}} label",
+  "contacts.settings.birthday": "Birthday",
+  "contacts.settings.birthdayDesc": "How birthdays look in Calendar: their colour (Calendar marks them with the Contacts icon)."
 }

@@ -10,12 +10,14 @@ import { DEFAULT_CONTACT_LABELS, getSettings } from '../src/data'
 import { emptyContact } from '../src/schema'
 import type { ContactLabels } from '../src/types'
 import { refreshContactIcons } from '../src/contactIcons'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { getStore } from '../src/store'
 import { cardRealm } from './cards'
 
-declare const CONTACT_ICON_SVGS: Record<string, string>
+declare const CONTACT_ICON_SVGS: Record<string, Record<string, string>>
 
-async function setup(labels?: Partial<ContactLabels>): Promise<ReturnType<typeof createMockValleyApi>> {
+async function setup(labels?: Record<string, unknown>): Promise<ReturnType<typeof createMockValleyApi>> {
   const mock = createMockValleyApi({
     manifest: { id: 'contacts' },
     realm: { path: '/mock/realm', name: 'mock', displayName: 'mock' },
@@ -31,6 +33,8 @@ async function renderSettings(): Promise<void> {
   await act(async () => { render(<Settings section="social" />) })
 }
 
+const names = (labels: readonly { name: string }[]): string[] => labels.map((label) => label.name)
+
 const optionTexts = (select: HTMLElement): string[] => [...(select as HTMLSelectElement).options].map((option) => option.textContent ?? '')
 
 afterEach(() => {
@@ -43,19 +47,37 @@ describe('label lists', async () => {
     await setup()
     const labels = getSettings().labels
     for (const kind of ['phone', 'email', 'place', 'website'] as const) {
-      expect(labels[kind].slice(0, 3)).toEqual(['Family', 'Work', 'School'])
+      expect(names(labels[kind]).slice(0, 3)).toEqual(['Family', 'Work', 'School'])
       expect(labels[kind].length).toBeGreaterThan(6)
-      expect(new Set(labels[kind].map((label) => label.toLowerCase())).size).toBe(labels[kind].length)
+      expect(new Set(names(labels[kind]).map((label) => label.toLowerCase())).size).toBe(labels[kind].length)
+      // Every default label has an icon from the Contacts icon folder and a palette colour (19 Nov).
+      const folder = kind === 'place' ? 'address' : kind
+      for (const label of labels[kind]) {
+        expect(existsSync(join(process.cwd(), 'contact-icon', folder, `${label.icon}.svg`))).toBe(true)
+        expect(label.color).toMatch(/^palette:/)
+      }
     }
-    expect(labels.phone).toContain('Mobile')
-    expect(labels.place).toContain('Home')
-    expect(labels.website).toContain('Blog')
+    expect(names(labels.phone)).toContain('Mobile')
+    expect(names(labels.place)).toContain('Home')
+    expect(names(labels.website)).toContain('Blog')
+    expect(getSettings().birthday).toEqual({ icon: 'cake', color: 'palette:rose' })
+    expect(existsSync(join(process.cwd(), 'contact-icon', 'birthday', 'cake.svg'))).toBe(true)
   })
 
   it('keeps an emptied list empty instead of bringing the defaults back', async () => {
     await setup({ phone: [] })
     expect(getSettings().labels.phone).toEqual([])
     expect(getSettings().labels.email).toEqual([...DEFAULT_CONTACT_LABELS.email])
+  })
+
+  it('reads lists saved as plain names, giving a known name its default look and an unknown one none', async () => {
+    await setup({ place: ['home', 'Field station', { name: 'Cabin', icon: 'vacation', color: '#123456' }, { name: 'Bad', icon: '../x', color: 'red' }] })
+    expect(getSettings().labels.place).toEqual([
+      { name: 'home', icon: 'home', color: 'palette:green' },
+      { name: 'Field station' },
+      { name: 'Cabin', icon: 'vacation', color: '#123456' },
+      { name: 'Bad' }
+    ])
   })
 })
 
@@ -75,7 +97,7 @@ describe('label dropdowns in the contact form', async () => {
 
     expect(optionTexts(screen.getByRole('combobox', { name: 'Email label' })).slice(0, 3)).toEqual(['Family', 'Work', 'School'])
     const website = screen.getByRole('combobox', { name: 'Website label' })
-    expect(optionTexts(website)).toEqual([...DEFAULT_CONTACT_LABELS.website, 'No label', 'Edit labels…'])
+    expect(optionTexts(website)).toEqual([...names(DEFAULT_CONTACT_LABELS.website), 'No label', 'Edit labels…'])
   })
 
   it('keeps a saved label that is not in the list and matches labels regardless of case', async () => {
@@ -118,15 +140,15 @@ describe('Labels settings', async () => {
     const draft = within(phoneList).getByRole('textbox', { name: 'New Phone label' })
     fireEvent.change(draft, { target: { value: 'Satellite' } })
     fireEvent.click(within(phoneList).getByRole('button', { name: 'Add Phone label' }))
-    expect((mock.api.settings.get().labels as ContactLabels).phone.at(-1)).toBe('Satellite')
+    expect((mock.api.settings.get().labels as ContactLabels).phone.at(-1)).toEqual({ name: 'Satellite', color: 'palette:gray' })
 
     const family = within(phoneList).getByDisplayValue('Family')
     fireEvent.change(family, { target: { value: 'Relatives' } })
     fireEvent.blur(family)
-    expect((mock.api.settings.get().labels as ContactLabels).phone[0]).toBe('Relatives')
+    expect((mock.api.settings.get().labels as ContactLabels).phone[0]).toEqual({ name: 'Relatives', icon: 'family', color: 'palette:pink' })
 
     fireEvent.click(within(phoneList).getByRole('button', { name: 'Remove Work' }))
-    expect((mock.api.settings.get().labels as ContactLabels).phone).not.toContain('Work')
+    expect(names((mock.api.settings.get().labels as ContactLabels).phone)).not.toContain('Work')
 
     cleanup()
     render(<ContactForm contact={null} />)
@@ -183,3 +205,34 @@ describe('social row', () => {
     expect(icon).toBeTruthy()
   })
 })
+
+describe('label and birthday looks', () => {
+  it('sets a label\'s colour and icon in Settings and the dropdown shows the colour', async () => {
+    const mock = await setup()
+    await renderSettings()
+    const placeList = screen.getByRole('list', { name: 'Address' })
+    expect(within(placeList).getByRole('button', { name: 'Choose icon for Home' })).toBeTruthy()
+    // The testkit's colour field hands back its own value on a click: enough to see the field is wired to the label.
+    const homeColor = within(placeList).getByLabelText('Colour of Home')
+    expect(homeColor).toHaveAttribute('data-color', 'palette:green')
+    fireEvent.click(homeColor)
+    expect((mock.api.settings.get().labels as ContactLabels).place.find((label) => label.name === 'Home')).toEqual({ name: 'Home', icon: 'home', color: 'palette:green' })
+    const birthday = screen.getByRole('group', { name: 'Birthday' })
+    expect(within(birthday).getByRole('button', { name: 'Choose icon for Birthday' })).toBeTruthy()
+    const birthdayColor = within(birthday).getByLabelText('Colour of Birthday')
+    expect(birthdayColor).toHaveAttribute('data-color', 'palette:rose')
+    fireEvent.click(birthdayColor)
+    expect(mock.api.settings.get().birthdayStyle).toEqual({ icon: 'cake', color: 'palette:rose' })
+    cleanup()
+    render(<ContactForm contact={null} />)
+    fireEvent.click(screen.getByRole('button', { name: /Add address/ }))
+    expect(screen.getByRole('combobox', { name: 'Address label' })).toBeTruthy()
+  })
+
+  it('colours a birthday in Calendar with the birthday colour', async () => {
+    const { birthdayItems } = await import('../src/calendarSource')
+    const items = birthdayItems([{ ...emptyContact('A.vcf'), displayName: 'A', birthdate: '1990-05-12' }], '2026-01-01', '2026-12-31', '#445566')
+    expect(items[0]).toMatchObject({ date: '2026-05-12', color: '#445566', icon: 'cake' })
+  })
+})
+

@@ -302,7 +302,10 @@ const CSS = `
 .ct-label-list-title { font-size:var(--small-font-size); font-weight:var(--font-semi-bold, 600); color:var(--title-color, var(--text-color)); }
 .ct-label-reset { padding:0; border:none; background:none; color:var(--text-tertiary); font-size:var(--smaller-font-size); cursor:pointer; }
 .ct-label-reset:hover { color:var(--text-color); }
-.ct-label-setting-row { grid-template-columns:22px minmax(0,1fr) 32px 28px; }
+.ct-label-setting-row { grid-template-columns:22px 20px 24px minmax(0,1fr) 32px 28px; }
+/* The birthday row: grip slot, icon and colour on the label columns, then its description (19 Nov). */
+.ct-birthday-row { grid-template-columns:22px 20px 24px minmax(0,1fr); }
+.ct-birthday-desc { color:var(--text-tertiary); font-size:var(--smaller-font-size); }
 .ct-label-setting-row .settings-group-usage { text-align:center; color:var(--text-tertiary); font-size:var(--smaller-font-size); }
 
 /* ---- Social platforms: reorder + icon picker ------------------------- */

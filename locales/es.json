@@ -242,7 +242,7 @@
   "contacts.form.label.place": "Etiqueta de la dirección",
   "contacts.form.label.website": "Etiqueta del sitio web",
   "contacts.settings.labels": "Etiquetas",
-  "contacts.settings.labelsDesc": "Las etiquetas que ofrecen las listas de teléfono, correo, dirección y sitio web, en este orden. Renombrar o quitar una etiqueta no cambia las fichas que la usan.",
+  "contacts.settings.labelsDesc": "Las etiquetas que ofrecen las listas de teléfono, correo, dirección y sitio web, en este orden, cada una con un icono y un color: Mapa dibuja una dirección con el icono y el color de su etiqueta, la lista muestra el color. Renombrar o quitar una etiqueta no cambia las fichas que la usan.",
   "contacts.settings.labels.phone": "Teléfono",
   "contacts.settings.labels.email": "Correo",
   "contacts.settings.labels.place": "Dirección",
@@ -258,5 +258,9 @@
   "contacts.settings.addPlatform": "Añadir plataforma",
   "contacts.settings.labels.add": "Añadir etiqueta",
   "contacts.settings.labels.addIn": "Añadir etiqueta de {{p0}}",
-  "contacts.form.fileNameTaken": "{{p0}}.vcf ya existe en esta carpeta. Elige otro nombre; hasta entonces el archivo conserva su nombre actual."
+  "contacts.form.fileNameTaken": "{{p0}}.vcf ya existe en esta carpeta. Elige otro nombre; hasta entonces el archivo conserva su nombre actual.",
+  "contacts.settings.labels.color": "Color de {{p0}}",
+  "contacts.settings.labels.newColor": "Color de la nueva etiqueta de {{p0}}",
+  "contacts.settings.birthday": "Cumpleaños",
+  "contacts.settings.birthdayDesc": "Cómo se ven los cumpleaños en Calendario: su color (Calendario los marca con el icono de Contactos)."
 }

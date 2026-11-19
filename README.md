@@ -35,13 +35,13 @@ Contacts explicitly contributes its Markdown `NOTE` content to Tag Search and Co
 
 The plugin maintains a rebuildable `note_search` dataset in its own cache through `api.data.dataset`, updating changed notes and removing deleted, renamed, or out-of-scope cards. The vCard files remain the source of truth.
 
-## Platform icons
+## Icons
 
-Platform SVGs live in `.valley/plugins/data/contacts/contact-icon/`, separate from the installed plugin package. On activation, missing defaults are copied from the bundled `contact-icon/` collection; existing files are never replaced. Add or edit named SVGs there, then return to Valley or use **Refresh icons** in Contacts settings. **Open icon folder** opens that directory. No plugin rebuild is needed for custom artwork.
+Icons live in `.valley/assets/icons/contact-icon/`, separate from the installed plugin package, one subfolder per kind: `social-media/` (platform logos), `phone/`, `email/`, `address/`, `website/` (label icons) and `birthday/`. On activation, missing defaults are copied from the bundled `contact-icon/` collection; existing files are never replaced. Add or edit named SVGs there; Contacts reloads them when the folder changes, with no plugin rebuild.
 
-Filenames match platform names regardless of capitalization, spaces, or hyphens. Use `currentColor` for artwork that follows the theme. Existing platform aliases resolve to their matching icons, and unmatched names use `social.svg`. SVGs are restricted to static vector artwork; scripts, embedded HTML, styles, and external resources are removed before rendering.
+Platform filenames match platform names regardless of capitalization, spaces, or hyphens, and unmatched names use the generic social glyph. Use `currentColor` for artwork that follows the theme. SVGs are restricted to static vector artwork; scripts, embedded HTML, styles, and external resources are removed before rendering. Click an icon in Settings to choose another SVG from that list's own folder; “Match platform name automatically” clears a platform's override.
 
-Click a platform icon in Contacts settings to search the SVG collection and save a manual choice. Choose “Match platform name automatically” to clear the override. The selection applies to settings, the contact editor, and contact cards.
+Every label in Settings → Social media → Labels and the Birthday row carry an icon and a colour: Map draws an address in its label's icon and colour, the label dropdown shows the colour, and Calendar colours birthdays.
 
 ## Package
 

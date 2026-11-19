@@ -3,7 +3,7 @@ import type { CSSProperties, ReactElement, ReactNode } from 'react'
 import { React, api as runtimeApi } from './runtime'
 import type { MountedPluginView, PluginEditorProvider, ValleyPluginApi } from '@valley/plugin-sdk'
 import type { TextDocumentRead } from '@valley/plugin-sdk/types'
-import type { Contact, ContactLabelKind, ContactMethod, Organization, RelationType, Social, SocialLink } from './types'
+import type { Contact, ContactLabel, ContactLabelKind, ContactMethod, Organization, RelationType, Social, SocialLink } from './types'
 import { RELATION_TYPES } from './types'
 import { getStore } from './store'
 import { paletteCssValue } from '@valley/plugin-sdk/palette'
@@ -932,14 +932,15 @@ const EDIT_OPTION = '__contacts-edit__'
 function LabelSelect({ api, kind, labels, value, onChange }: {
   api: ValleyPluginApi
   kind: ContactLabelKind
-  labels: readonly string[]
+  labels: readonly ContactLabel[]
   value: string
   onChange: (label: string) => void
 }): ReactElement {
   const { SelectField } = api.ui.settings
   const saved = value.trim()
-  const match = labels.find((label) => label.toLowerCase() === saved.toLowerCase())
-  const options = labels.map((label) => ({ value: label, label }))
+  const match = labels.find((label) => label.name.toLowerCase() === saved.toLowerCase())?.name
+  // Each label shows its colour as the row's dot, the colour Map draws its pin in (19 Nov).
+  const options: { value: string; label: string; color?: string }[] = labels.map((label) => ({ value: label.name, label: label.name, ...(label.color ? { color: label.color } : {}) }))
   if (saved && !match) options.push({ value: saved, label: saved })
   options.push({ value: '', label: uiText('contacts.form.noLabel') }, { value: EDIT_OPTION, label: uiText('contacts.form.editLabels') })
   return (
@@ -1040,7 +1041,7 @@ function Field({ label, full, children }: { label: string; full?: boolean; child
  */
 function PlaceList({ api, labels, title, items, setItems, placeholder }: {
   api: ValleyPluginApi
-  labels: readonly string[]
+  labels: readonly ContactLabel[]
   title: string
   items: ContactMethod[]
   setItems: (next: ContactMethod[]) => void
@@ -1071,7 +1072,7 @@ function PlaceList({ api, labels, title, items, setItems, placeholder }: {
 function MethodList({ api, kind, labels, title, items, setItems, placeholder }: {
   api: ValleyPluginApi
   kind: 'phone' | 'email'
-  labels: readonly string[]
+  labels: readonly ContactLabel[]
   title: string
   items: ContactMethod[]
   setItems: (next: ContactMethod[]) => void

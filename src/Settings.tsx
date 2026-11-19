@@ -1,11 +1,11 @@
 import type { ReactElement } from 'react'
 import type { SettingsReorderHandleProps, SettingsReorderItemProps } from '@valley/plugin-sdk'
 import { React, api } from './runtime'
-import type { Contact, ContactGroup, ContactLabelKind, SocialLink } from './types'
+import type { Contact, ContactGroup, ContactLabel, ContactLabelKind, SocialLink } from './types'
 import { CONTACT_LABEL_KINDS } from './types'
-import { DEFAULT_CONTACT_LABELS, getSettings, LABEL_LIMIT, LABEL_NAME_MAX, LABELS_KEY, normalizeLabelList, useContactLabels } from './data'
+import { BIRTHDAY_STYLE_KEY, DEFAULT_BIRTHDAY_STYLE, DEFAULT_CONTACT_LABELS, getSettings, LABEL_LIMIT, LABEL_NAME_MAX, LABELS_KEY, normalizeLabelList, useBirthdayStyle, useContactLabels } from './data'
 import { iconForPlatform } from './social'
-import { CONTACT_ICON_FOLDER, ContactIconPicker, useContactIcons } from './contactIcons'
+import { CONTACT_ICON_FOLDER, ContactIconPicker, contactIcon, hasContactIcon, SOCIAL_FOLDER, useContactIcons, type ContactIconFolder } from './contactIcons'
 import { useContacts } from './store'
 import { GripVertical, MdDelete, Plus, X } from './icons'
 import { uiText } from './localization'
@@ -187,7 +187,7 @@ function SocialSettings(): ReactElement {
           <span className="settings-toggle-title">{uiText('auto.52e0b0a389f8')}</span>
           <span className="settings-toggle-desc">
             {uiText('auto.658128ca827d')}{' '}<code>{'{}'}</code>{' '}{uiText('auto.928154ade660')}{' '}
-            {uiText('contacts.icons.folderHint', { p0: CONTACT_ICON_FOLDER })}
+            {uiText('contacts.icons.folderHint', { p0: `${CONTACT_ICON_FOLDER}/${SOCIAL_FOLDER}` })}
           </span>
         </span>
         <div className="ct-social-setting-head" aria-hidden="true">
@@ -252,32 +252,49 @@ function labelUsage(contacts: readonly Contact[], kind: ContactLabelKind, label:
   return contacts.filter((contact) => rows(contact).some((row) => (row.type ?? '').trim().toLowerCase() === key)).length
 }
 
-/** One label list: grip, name, usage, remove, and an add row on the same columns. Its order is the dropdown's order. */
+/** The icon folder each label list picks from (19 Nov). */
+const LABEL_FOLDERS: Record<ContactLabelKind, ContactIconFolder> = { phone: 'phone', email: 'email', place: 'address', website: 'website' }
+
+/** A label's or the birthday's icon from its folder; an unset or missing one shows the folder's neutral glyph. */
+function LabelGlyph({ icon, folder }: { icon?: string; folder: ContactIconFolder }): ReactElement {
+  const fallback = folder === 'birthday' ? 'cake' : 'other'
+  return React.createElement(contactIcon(icon && hasContactIcon(icon, folder) ? icon : fallback, folder))
+}
+
+/**
+ * One label list: grip, icon, colour, name, usage, remove, and an add row on the same columns (19 Nov). Its order is the
+ * dropdown's order; the icon and colour are how Map draws an address with this label and how the editor marks it.
+ */
 function LabelList({ kind, labels, contacts, onSave }: {
   kind: ContactLabelKind
-  labels: string[]
+  labels: ContactLabel[]
   contacts: readonly Contact[]
-  onSave: (kind: ContactLabelKind, next: string[]) => void
+  onSave: (kind: ContactLabelKind, next: ContactLabel[]) => void
 }): ReactElement {
-  const { IconButton, useReorderDrag } = api.ui.settings
+  const { ColorField, IconButton, useReorderDrag } = api.ui.settings
   const draft = React.useRef('')
+  const [draftIcon, setDraftIcon] = React.useState<string | undefined>(undefined)
+  const [draftColor, setDraftColor] = React.useState('palette:gray')
   const [addKey, setAddKey] = React.useState(0)
   const [duplicate, setDuplicate] = React.useState(false)
   const title = uiText(LABEL_TITLES[kind])
-  const taken = (name: string, except?: number): boolean => labels.some((label, index) => index !== except && label.toLowerCase() === name.trim().toLowerCase())
+  const taken = (name: string, except?: number): boolean => labels.some((label, index) => index !== except && label.name.toLowerCase() === name.trim().toLowerCase())
+  const update = (index: number, patch: Partial<ContactLabel>): void => onSave(kind, labels.map((entry, at) => at === index ? { ...entry, ...patch } : entry))
   const add = (): void => {
     const name = draft.current.trim().slice(0, LABEL_NAME_MAX)
     if (!name || labels.length >= LABEL_LIMIT) return
     if (taken(name)) { setDuplicate(true); return }
-    onSave(kind, [...labels, name])
+    onSave(kind, [...labels, { name, ...(draftIcon ? { icon: draftIcon } : {}), color: draftColor }])
     draft.current = ''
+    setDraftIcon(undefined)
+    setDraftColor('palette:gray')
     setDuplicate(false)
     setAddKey((key) => key + 1)
   }
-  const reorder = useReorderDrag<string>({
+  const reorder = useReorderDrag<ContactLabel>({
     items: labels,
-    getId: (label) => label,
-    getLabel: (label) => label,
+    getId: (label) => label.name,
+    getLabel: (label) => label.name,
     onReorder: (next) => onSave(kind, next)
   })
   const isDefault = JSON.stringify(labels) === JSON.stringify(DEFAULT_CONTACT_LABELS[kind])
@@ -285,38 +302,42 @@ function LabelList({ kind, labels, contacts, onSave }: {
     <div className="ct-label-list" role="list" aria-label={title}>
       <div className="ct-label-list-head">
         <span className="ct-label-list-title">{title}</span>
-        {!isDefault && <button type="button" className="ct-label-reset" onClick={() => onSave(kind, [...DEFAULT_CONTACT_LABELS[kind]])}>{uiText('contacts.settings.labels.reset')}</button>}
+        {!isDefault && <button type="button" className="ct-label-reset" onClick={() => onSave(kind, DEFAULT_CONTACT_LABELS[kind].map((entry) => ({ ...entry })))}>{uiText('contacts.settings.labels.reset')}</button>}
       </div>
       {labels.map((label, index) => {
         const handleProps = reorder.getHandleProps(label)
-        const count = labelUsage(contacts, kind, label)
+        const count = labelUsage(contacts, kind, label.name)
         return (
-          <div role="listitem" key={label} className={`ct-social-setting-row ct-label-setting-row${reorder.overId === label ? ` drop-${reorder.dropPosition ?? 'before'}` : ''}`} {...reorder.getItemProps(label)}>
+          <div role="listitem" key={label.name} className={`ct-social-setting-row ct-label-setting-row${reorder.overId === label.name ? ` drop-${reorder.dropPosition ?? 'before'}` : ''}`} {...reorder.getItemProps(label)}>
             <button {...handleProps} className={`${handleProps.className ?? ''} ct-social-grip ct-social-settings-grip`} title={uiText('contacts.social.reorder')}><GripVertical /></button>
+            <ContactIconPicker folder={LABEL_FOLDERS[kind]} name={label.name} icon={label.icon} onChange={(icon) => update(index, { icon })}><LabelGlyph folder={LABEL_FOLDERS[kind]} icon={label.icon} /></ContactIconPicker>
+            <ColorField key={`color:${label.name}`} value={label.color ?? 'palette:gray'} onChange={(color) => update(index, { color })} ariaLabel={uiText('contacts.settings.labels.color', { p0: label.name })} />
             <CommitTextField
-              key={`label:${label}`}
-              initial={label}
+              key={`label:${label.name}`}
+              initial={label.name}
               spellCheck
               ariaLabel={uiText('contacts.settings.labels.name', { p0: title })}
               onCommit={(value) => {
                 const name = value.trim().slice(0, LABEL_NAME_MAX)
                 if (!name || taken(name, index)) return
-                onSave(kind, labels.map((entry, at) => at === index ? name : entry))
+                update(index, { name })
               }}
             />
             <span className="settings-group-usage" title={uiText('contacts.settings.labels.usage', { count })}>{count}</span>
-            <api.ui.settings.IconButton
+            <IconButton
               className="ct-group-remove"
               variant="ghost"
-              ariaLabel={uiText('auto.b8c425a1937d', { p0: label })}
+              ariaLabel={uiText('auto.b8c425a1937d', { p0: label.name })}
               title={uiText('contacts.settings.labels.remove')}
               onClick={() => onSave(kind, labels.filter((_, at) => at !== index))}
-            ><X /></api.ui.settings.IconButton>
+            ><X /></IconButton>
           </div>
         )
       })}
       <div className="ct-social-setting-row ct-label-setting-row ct-social-setting-add" key={`add:${addKey}`}>
         <span className="ct-social-grip ct-social-settings-grip" aria-hidden="true" />
+        <ContactIconPicker folder={LABEL_FOLDERS[kind]} name={uiText('contacts.settings.labels.new')} icon={draftIcon} onChange={setDraftIcon}><LabelGlyph folder={LABEL_FOLDERS[kind]} icon={draftIcon} /></ContactIconPicker>
+        <ColorField key={`add-color:${addKey}`} value={draftColor} onChange={setDraftColor} ariaLabel={uiText('contacts.settings.labels.newColor', { p0: title })} />
         <CommitTextField
           initial=""
           invalid={duplicate}
@@ -336,8 +357,37 @@ function LabelList({ kind, labels, contacts, onSave }: {
   )
 }
 
-/** The labels the phone, email, address and website dropdowns offer (18 Nov). */
+/** The birthday's icon and colour, for its entries in Calendar (19 Nov). */
+function BirthdayRow(): ReactElement {
+  const { ColorField } = api.ui.settings
+  const saved = useBirthdayStyle(api)
+  const [style, setStyle] = React.useState(saved)
+  React.useEffect(() => setStyle(saved), [saved])
+  const save = (patch: Partial<typeof style>): void => {
+    const next = { ...style, ...patch }
+    setStyle(next)
+    void api.settings.set(BIRTHDAY_STYLE_KEY, next)
+  }
+  const title = uiText('contacts.settings.birthday')
+  return (
+    <div className="ct-label-list" role="group" aria-label={title}>
+      <div className="ct-label-list-head">
+        <span className="ct-label-list-title">{title}</span>
+        {JSON.stringify(style) !== JSON.stringify(DEFAULT_BIRTHDAY_STYLE) && <button type="button" className="ct-label-reset" onClick={() => save({ ...DEFAULT_BIRTHDAY_STYLE })}>{uiText('contacts.settings.labels.reset')}</button>}
+      </div>
+      <div className="ct-social-setting-row ct-label-setting-row ct-birthday-row">
+        <span className="ct-social-grip ct-social-settings-grip" aria-hidden="true" />
+        <ContactIconPicker folder="birthday" name={title} icon={style.icon} onChange={(icon) => save({ icon: icon ?? DEFAULT_BIRTHDAY_STYLE.icon })}><LabelGlyph folder="birthday" icon={style.icon} /></ContactIconPicker>
+        <ColorField value={style.color} onChange={(color) => save({ color })} ariaLabel={uiText('contacts.settings.labels.color', { p0: title })} />
+        <span className="ct-birthday-desc">{uiText('contacts.settings.birthdayDesc')}</span>
+      </div>
+    </div>
+  )
+}
+
+/** The labels the phone, email, address and website dropdowns offer (18 Nov), with their icons and colours, and the birthday's look (19 Nov). */
 function LabelSettings(): ReactElement {
+  useContactIcons()
   const { Section } = api.ui.settings
   const saved = useContactLabels(api)
   // A save shows at once, before the settings change comes back.
@@ -346,8 +396,8 @@ function LabelSettings(): ReactElement {
   const latest = React.useRef(labels)
   latest.current = labels
   const contacts = useContacts(api).contacts
-  const save = React.useCallback((kind: ContactLabelKind, next: string[]): void => {
-    const updated = { ...latest.current, [kind]: normalizeLabelList(next) }
+  const save = React.useCallback((kind: ContactLabelKind, next: ContactLabel[]): void => {
+    const updated = { ...latest.current, [kind]: normalizeLabelList(next, kind) }
     latest.current = updated
     setLabels(updated)
     void api.settings.set(LABELS_KEY, updated)
@@ -359,6 +409,7 @@ function LabelSettings(): ReactElement {
           <span className="settings-toggle-desc">{uiText('contacts.settings.labelsDesc')}</span>
         </span>
         {CONTACT_LABEL_KINDS.map((kind) => <LabelList key={kind} kind={kind} labels={labels[kind]} contacts={contacts} onSave={save} />)}
+        <BirthdayRow />
       </div>
     </Section>
   )

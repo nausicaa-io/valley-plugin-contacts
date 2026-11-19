@@ -242,7 +242,7 @@
   "contacts.form.label.place": "Libellé de l'adresse",
   "contacts.form.label.website": "Libellé du site Web",
   "contacts.settings.labels": "Libellés",
-  "contacts.settings.labelsDesc": "Les libellés proposés par les listes du téléphone, de l'e-mail, de l'adresse et du site Web, dans cet ordre. Renommer ou supprimer un libellé ne modifie pas les fiches qui l'utilisent.",
+  "contacts.settings.labelsDesc": "Les libellés proposés par les listes du téléphone, de l’e-mail, de l’adresse et du site Web, dans cet ordre, chacun avec une icône et une couleur : Carte dessine une adresse avec l’icône et la couleur de son libellé, la liste montre la couleur. Renommer ou supprimer un libellé ne modifie pas les fiches qui l’utilisent.",
   "contacts.settings.labels.phone": "Téléphone",
   "contacts.settings.labels.email": "E-mail",
   "contacts.settings.labels.place": "Adresse",
@@ -258,5 +258,9 @@
   "contacts.settings.addPlatform": "Ajouter une plateforme",
   "contacts.settings.labels.add": "Ajouter un libellé",
   "contacts.settings.labels.addIn": "Ajouter un libellé {{p0}}",
-  "contacts.form.fileNameTaken": "{{p0}}.vcf existe déjà dans ce dossier. Choisissez un autre nom ; le fichier garde son nom actuel d'ici là."
+  "contacts.form.fileNameTaken": "{{p0}}.vcf existe déjà dans ce dossier. Choisissez un autre nom ; le fichier garde son nom actuel d'ici là.",
+  "contacts.settings.labels.color": "Couleur de {{p0}}",
+  "contacts.settings.labels.newColor": "Couleur du nouveau libellé {{p0}}",
+  "contacts.settings.birthday": "Anniversaire",
+  "contacts.settings.birthdayDesc": "L’apparence des anniversaires dans Calendrier : leur couleur (Calendrier les marque de l’icône Contacts)."
 }

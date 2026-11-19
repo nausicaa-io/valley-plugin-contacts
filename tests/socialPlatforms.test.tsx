@@ -14,7 +14,7 @@ import type { SocialLink } from '../src/types'
 import { readContactIcons } from '../src/backend/icons'
 import config from '../config.json'
 
-declare const CONTACT_ICON_SVGS: Record<string, string>
+declare const CONTACT_ICON_SVGS: Record<string, Record<string, string>>
 
 const V1 = ['instagram', 'x', 'linkedin', 'snapchat', 'facebook', 'tiktok', 'youtube', 'github',
   'telegram', 'whatsapp', 'threads', 'reddit', 'discord', 'twitch', 'pinterest', 'spotify',
@@ -118,7 +118,7 @@ describe('social platform settings list', () => {
     main.unmount()
     await act(async () => { render(<Settings section="social" />) })
     expect(screen.getByText('Social links')).toBeInTheDocument()
-    expect(screen.getByText(/contacts-icon/)).toBeInTheDocument()
+    expect(screen.getByText(/contact-icon\/social-media/)).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'New platform name' })).toBeInTheDocument()
     expect(screen.getByRole('list', { name: 'Phone' })).toBeInTheDocument()
     cleanup()
@@ -252,34 +252,49 @@ describe('contact social rows', () => {
 })
 
 describe('durable contact icons', () => {
-  it('seeds missing defaults into the asset folder, keeps saved overrides and discovers new files', async () => {
+  it('seeds each icon folder with its missing defaults, keeps saved overrides and discovers new files', async () => {
     const custom = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /></svg>'
-    const files = new Map<string, string>([['instagram.svg', custom], ['my-platform.svg', custom]])
+    const files = new Map<string, string>([['social-media/instagram.svg', custom], ['social-media/my-platform.svg', custom], ['address/cabin.svg', custom]])
     const opened: unknown[] = []
     const storage = {
       open: vi.fn(async (request: unknown) => { opened.push(request); return { handle: 'h' } }),
       close: vi.fn(async () => {}),
       mkdir: vi.fn(async () => {}),
-      list: vi.fn(async () => [...files].map(([name, text]) => ({ name, kind: 'file', size: text.length }))),
+      list: vi.fn(async (location: { path: string }) => [...files].filter(([path]) => path.startsWith(`${location.path}/`) && !path.slice(location.path.length + 1).includes('/'))
+        .map(([path, text]) => ({ name: path.slice(location.path.length + 1), kind: 'file', size: text.length }))),
       write: vi.fn(async (location: { path: string }, text: string) => { files.set(location.path, text) }),
       read: vi.fn(async (location: { path: string }) => files.get(location.path) ?? '')
     }
     const result = await readContactIcons({ storage } as never)
-    expect(opened[0]).toMatchObject({ area: 'metadata', path: 'assets/icons/contacts-icon' })
-    expect(files.get('instagram.svg')).toBe(custom)
-    expect(files.get('github.svg')).toContain('<svg')
-    expect(result.icons.instagram).toBe(custom)
-    expect(result.icons['my-platform']).toBe(custom)
+    expect(opened[0]).toMatchObject({ area: 'metadata', path: 'assets/icons/contact-icon' })
+    expect(Object.keys(result.icons).sort()).toEqual(['address', 'birthday', 'email', 'phone', 'social-media', 'website'])
+    expect(files.get('social-media/instagram.svg')).toBe(custom)
+    expect(files.get('social-media/github.svg')).toContain('<svg')
+    expect(files.get('address/home.svg')).toContain('<svg')
+    expect(files.get('birthday/cake.svg')).toContain('<svg')
+    expect(result.icons['social-media'].instagram).toBe(custom)
+    expect(result.icons['social-media']['my-platform']).toBe(custom)
+    expect(result.icons.address.cabin).toBe(custom)
     await readContactIcons({ storage } as never)
-    expect(files.get('instagram.svg')).toBe(custom)
+    expect(files.get('social-media/instagram.svg')).toBe(custom)
   })
 
-  it('draws the folder icons, a saved override included', async () => {
+  it('bundles the icons into the backend: the build replaces the exact declaration the backend carries', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const declaration = /CONTACT_ICON_DECLARATION = '([^']+)'/.exec(readFileSync(join(process.cwd(), 'tooling/contactIcons.mjs'), 'utf8'))?.[1]
+    expect(declaration).toBeTruthy()
+    expect(readFileSync(join(process.cwd(), 'src/backend/icons.ts'), 'utf8')).toContain(declaration)
+  })
+
+  it('draws the folder icons, a saved override included, each from its own folder', async () => {
     const custom = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /></svg>'
     const mock = setup()
-    mock.api.backend.call = vi.fn(async () => ({ icons: { ...CONTACT_ICON_SVGS, instagram: custom, 'my-platform': custom } })) as never
+    mock.api.backend.call = vi.fn(async () => ({ icons: { ...CONTACT_ICON_SVGS, 'social-media': { ...CONTACT_ICON_SVGS['social-media'], instagram: custom, 'my-platform': custom } } })) as never
     await act(async () => refreshContactIcons(mock.api))
     expect(hasContactIcon('My Platform')).toBe(true)
+    expect(hasContactIcon('home')).toBe(false)
+    expect(hasContactIcon('home', 'address')).toBe(true)
     const { container } = render(React.createElement(contactIcon('Instagram')))
     expect(container.querySelector('circle')).toBeTruthy()
   })

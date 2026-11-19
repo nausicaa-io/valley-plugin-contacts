@@ -242,7 +242,7 @@
   "contacts.form.label.place": "Bezeichnung der Adresse",
   "contacts.form.label.website": "Bezeichnung der Website",
   "contacts.settings.labels": "Bezeichnungen",
-  "contacts.settings.labelsDesc": "Die Bezeichnungen, die die Auswahllisten für Telefon, E-Mail, Adresse und Website anbieten, in dieser Reihenfolge. Umbenennen oder Entfernen einer Bezeichnung ändert die Karten nicht, die sie verwenden.",
+  "contacts.settings.labelsDesc": "Die Bezeichnungen, die die Auswahllisten für Telefon, E-Mail, Adresse und Website anbieten, in dieser Reihenfolge, jede mit Symbol und Farbe: Die Karte zeichnet eine Adresse mit dem Symbol und der Farbe ihrer Bezeichnung, die Auswahlliste zeigt die Farbe. Umbenennen oder Entfernen einer Bezeichnung ändert die Karten nicht, die sie verwenden.",
   "contacts.settings.labels.phone": "Telefon",
   "contacts.settings.labels.email": "E-Mail",
   "contacts.settings.labels.place": "Adresse",
@@ -258,5 +258,9 @@
   "contacts.settings.addPlatform": "Plattform hinzufügen",
   "contacts.settings.labels.add": "Bezeichnung hinzufügen",
   "contacts.settings.labels.addIn": "Bezeichnung für {{p0}} hinzufügen",
-  "contacts.form.fileNameTaken": "{{p0}}.vcf gibt es in diesem Ordner schon. Wähle einen anderen Namen; bis dahin behält die Datei ihren Namen."
+  "contacts.form.fileNameTaken": "{{p0}}.vcf gibt es in diesem Ordner schon. Wähle einen anderen Namen; bis dahin behält die Datei ihren Namen.",
+  "contacts.settings.labels.color": "Farbe von {{p0}}",
+  "contacts.settings.labels.newColor": "Farbe der neuen Bezeichnung für {{p0}}",
+  "contacts.settings.birthday": "Geburtstag",
+  "contacts.settings.birthdayDesc": "So erscheinen Geburtstage im Kalender: ihre Farbe (der Kalender zeigt sie mit dem Kontakte-Symbol)."
 }

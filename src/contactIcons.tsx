@@ -3,8 +3,11 @@ import type { ValleyPluginApi } from '@valley/plugin-sdk'
 import { React, api } from './runtime'
 import { uiText } from './localization'
 
-/** Realm-relative folder of the platform icons (seeded by the backend); add an SVG there to offer it. */
-export const CONTACT_ICON_FOLDER = '.valley/assets/icons/contacts-icon'
+/** Realm-relative folder of the Contacts icons (seeded by the backend), one subfolder per kind (19 Nov); add an SVG there to offer it. */
+export const CONTACT_ICON_FOLDER = '.valley/assets/icons/contact-icon'
+/** The icon folders: social platforms, the four label kinds and the birthday. */
+export type ContactIconFolder = 'social-media' | 'phone' | 'email' | 'address' | 'website' | 'birthday'
+export const SOCIAL_FOLDER: ContactIconFolder = 'social-media'
 
 const SOCIAL_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><circle cx="12" cy="14" r="3"/><path d="M12 7v4M6.7 17.8l2.8-2M17.3 17.8l-2.8-2"/></svg>'
 
@@ -30,9 +33,10 @@ export function sanitizeContactSvg(source: string): string {
 }
 
 interface Registry {
-  svgs: Record<string, string>
-  /** iconKey → file name, so a lookup never scans every icon. */
-  keys: Map<string, string>
+  /** Sanitized sources by folder and file name. */
+  svgs: Record<string, Record<string, string>>
+  /** Per folder: iconKey → file name, so a lookup never scans every icon. */
+  keys: Record<string, Map<string, string>>
   revision: number
   loaded: boolean
   listeners: Set<() => void>
@@ -41,7 +45,7 @@ interface Registry {
 
 function registry(owner = api): Registry {
   return owner.runtime.getOrCreate('contacts.icons', () => ({
-    svgs: { social: SOCIAL_SVG }, keys: new Map([['social', 'social']]), revision: 0, loaded: false, listeners: new Set<() => void>(), pending: null
+    svgs: { [SOCIAL_FOLDER]: { social: SOCIAL_SVG } }, keys: { [SOCIAL_FOLDER]: new Map([['social', 'social']]) }, revision: 0, loaded: false, listeners: new Set<() => void>(), pending: null
   }) as Registry)
 }
 
@@ -59,14 +63,21 @@ function clean(source: string): string | null {
 export function refreshContactIcons(owner = api): Promise<void> {
   const current = registry(owner)
   if (current.pending) return current.pending
-  current.pending = owner.backend.call<{ icons?: Record<string, string> }>('contactIcons', {}).then((result) => {
-    const svgs: Record<string, string> = { social: SOCIAL_SVG }
-    for (const [name, source] of Object.entries(result?.icons ?? {})) {
-      const svg = typeof source === 'string' ? clean(source) : null
-      if (svg) svgs[name] = svg
+  current.pending = owner.backend.call<{ icons?: Record<string, Record<string, string>> }>('contactIcons', {}).then((result) => {
+    const svgs: Record<string, Record<string, string>> = { [SOCIAL_FOLDER]: { social: SOCIAL_SVG } }
+    const keys: Record<string, Map<string, string>> = {}
+    for (const [folder, files] of Object.entries(result?.icons ?? {})) {
+      if (!files || typeof files !== 'object') continue
+      const into = svgs[folder] ??= {}
+      for (const [name, source] of Object.entries(files)) {
+        const svg = typeof source === 'string' ? clean(source) : null
+        if (svg) into[name] = svg
+      }
     }
-    const keys = new Map<string, string>()
-    for (const name of Object.keys(svgs).sort()) if (!keys.has(iconKey(name))) keys.set(iconKey(name), name)
+    for (const [folder, files] of Object.entries(svgs)) {
+      const map = keys[folder] = new Map<string, string>()
+      for (const name of Object.keys(files).sort()) if (!map.has(iconKey(name))) map.set(iconKey(name), name)
+    }
     current.svgs = svgs
     current.keys = keys
     current.loaded = true
@@ -98,29 +109,47 @@ export function initializeContactIcons(owner: ValleyPluginApi): () => void {
   return () => { window.clearTimeout(timer); off() }
 }
 
+/** The sanitized SVG source of an icon in a folder, or undefined when there is none by that name. */
+export function contactIconSvg(name: string | undefined, folder: ContactIconFolder = SOCIAL_FOLDER, owner = api): string | undefined {
+  const current = registry(owner)
+  const key = current.keys[folder]?.get(iconKey(name))
+  return key ? current.svgs[folder]?.[key] : undefined
+}
+
+/** Calls `listener` whenever the icon folder was read again. */
+export function subscribeContactIcons(listener: () => void, owner = api): () => void {
+  const current = registry(owner)
+  current.listeners.add(listener)
+  return () => { current.listeners.delete(listener) }
+}
+
 type Icon = (props: { className?: string }) => ReactElement
 const components = new Map<string, Icon>()
 
-export function hasContactIcon(name: string | undefined): boolean {
-  return registry().keys.has(iconKey(name))
+export function hasContactIcon(name: string | undefined, folder: ContactIconFolder = SOCIAL_FOLDER): boolean {
+  return Boolean(registry().keys[folder]?.has(iconKey(name)))
 }
 
-export function contactIcon(name: string | undefined): Icon {
-  const key = registry().keys.get(iconKey(name)) ?? 'social'
-  let component = components.get(key)
+/** An icon of a folder as a component; a missing one draws the generic social glyph. */
+export function contactIcon(name: string | undefined, folder: ContactIconFolder = SOCIAL_FOLDER): Icon {
+  const key = registry().keys[folder]?.get(iconKey(name)) ?? 'social'
+  const id = `${folder}/${key}`
+  let component = components.get(id)
   if (!component) {
     component = ({ className }) => {
-      const svg = registry().svgs[key] ?? SOCIAL_SVG
+      const svg = registry().svgs[folder]?.[key] ?? SOCIAL_SVG
       return <span className={`ct-platform-icon${className ? ` ${className}` : ''}`} aria-hidden="true" dangerouslySetInnerHTML={{ __html: svg }} />
     }
-    components.set(key, component)
+    components.set(id, component)
   }
   return component
 }
 
-export function ContactIconPicker({ name, icon, onChange, children }: {
+export function ContactIconPicker({ name, icon, onChange, children, folder = SOCIAL_FOLDER }: {
   name: string
   icon?: string
+  /** The folder whose icons it offers (19 Nov). */
+  folder?: ContactIconFolder
   onChange: (icon: string | undefined) => void
   children: ReactElement
 }): ReactElement {
@@ -130,17 +159,17 @@ export function ContactIconPicker({ name, icon, onChange, children }: {
     <button ref={ref} type="button" className="ct-social-icon ct-social-icon-button" title={label} aria-label={label}
       onClick={() => {
         if (!ref.current) return
-        void api.ui.openPopover((ctx) => <ContactIconGrid current={icon} onPick={(next) => { onChange(next); ctx.close() }} />,
+        void api.ui.openPopover((ctx) => <ContactIconGrid folder={folder} current={icon} onPick={(next) => { onChange(next); ctx.close() }} />,
           { anchor: ref.current }, { className: 'ct-social-picker', ariaLabel: label })
       }}
     >{children}</button>
   )
 }
 
-function ContactIconGrid({ current, onPick }: { current?: string; onPick: (icon: string | undefined) => void }): ReactElement {
+function ContactIconGrid({ folder, current, onPick }: { folder: ContactIconFolder; current?: string; onPick: (icon: string | undefined) => void }): ReactElement {
   useContactIcons()
   const [query, setQuery] = React.useState('')
-  const svgs = registry().svgs
+  const svgs = registry().svgs[folder] ?? {}
   const shown = Object.keys(svgs).sort().filter(name => iconKey(name).includes(iconKey(query)))
   return (
     <div className="ct-social-picker-body">
@@ -162,7 +191,7 @@ function ContactIconGrid({ current, onPick }: { current?: string; onPick: (icon:
         ))}
       </div>
       {!shown.length && <span className="settings-empty-text">{uiText('contacts.social.noIcons')}</span>}
-      <span className="ct-social-picker-hint">{uiText('contacts.icons.folderHint', { p0: CONTACT_ICON_FOLDER })}</span>
+      <span className="ct-social-picker-hint">{uiText('contacts.icons.folderHint', { p0: `${CONTACT_ICON_FOLDER}/${folder}` })}</span>
     </div>
   )
 }

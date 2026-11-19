@@ -34,7 +34,17 @@ export interface ContactMethod {
 /** The labelled lists whose label is picked from Settings → Contacts → Labels (18 Nov). */
 export const CONTACT_LABEL_KINDS = ['phone', 'email', 'place', 'website'] as const
 export type ContactLabelKind = (typeof CONTACT_LABEL_KINDS)[number]
-export type ContactLabels = Record<ContactLabelKind, string[]>
+/** A label of a phone, email, address or website row: its name (saved in the card) and how Map and the editor show it (19 Nov). */
+export interface ContactLabel {
+  name: string
+  /** Icon name in the kind's folder under `.valley/assets/icons/contact-icon/` (19 Nov). */
+  icon?: string
+  /** `palette:<id>` or `#rrggbb`. */
+  color?: string
+}
+export type ContactLabels = Record<ContactLabelKind, ContactLabel[]>
+/** How birthdays look in Calendar: icon name and colour (19 Nov). */
+export interface BirthdayStyle { icon: string; color: string }
 
 /** A workplace / affiliation. */
 export interface Organization {

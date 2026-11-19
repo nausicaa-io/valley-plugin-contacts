@@ -242,7 +242,7 @@
   "contacts.form.label.place": "地址标签",
   "contacts.form.label.website": "网站标签",
   "contacts.settings.labels": "标签",
-  "contacts.settings.labelsDesc": "电话、电子邮件、地址和网站下拉列表提供的标签，按此顺序排列。重命名或移除标签不会更改使用它的名片。",
+  "contacts.settings.labelsDesc": "电话、电子邮件、地址和网站下拉列表提供的标签，按此顺序排列，每个标签都有图标和颜色：地图用标签的图标和颜色绘制地址，下拉列表显示颜色。重命名或移除标签不会更改使用它的名片。",
   "contacts.settings.labels.phone": "电话",
   "contacts.settings.labels.email": "电子邮件",
   "contacts.settings.labels.place": "地址",
@@ -258,5 +258,9 @@
   "contacts.settings.addPlatform": "添加平台",
   "contacts.settings.labels.add": "添加标签",
   "contacts.settings.labels.addIn": "添加{{p0}}标签",
-  "contacts.form.fileNameTaken": "此文件夹中已有 {{p0}}.vcf。请选择其他名称；在此之前文件保留当前名称。"
+  "contacts.form.fileNameTaken": "此文件夹中已有 {{p0}}.vcf。请选择其他名称；在此之前文件保留当前名称。",
+  "contacts.settings.labels.color": "{{p0}}的颜色",
+  "contacts.settings.labels.newColor": "新的{{p0}}标签的颜色",
+  "contacts.settings.birthday": "生日",
+  "contacts.settings.birthdayDesc": "生日在日历中的外观：颜色（日历用联系人图标标记它们）。"
 }

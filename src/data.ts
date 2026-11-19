@@ -13,7 +13,7 @@ import type { MountedPluginView, PluginIndexEntry } from '@valley/plugin-sdk'
 import { getContactIndex } from './indexOwner'
 import type { ValleyPluginApi } from '@valley/plugin-sdk'
 import type { TextDocumentRead } from '@valley/plugin-sdk/types'
-import type { Contact, ContactGroup, ContactLabels, GroupNode, SocialLink } from './types'
+import type { BirthdayStyle, Contact, ContactGroup, ContactLabel, ContactLabelKind, ContactLabels, GroupNode, SocialLink } from './types'
 import { CONTACT_LABEL_KINDS } from './types'
 import { CONTACT_EXTENSION, parseContactFile } from './schema'
 import { canonicalPlatform, defaultSocialLinks } from './social'
@@ -32,8 +32,10 @@ export interface ContactsSettings {
   /** Every shared and Contacts-only group, for a card's saved group colour. */
   allGroups: ContactGroup[]
   socials: SocialLink[]
-  /** The labels each labelled list offers in its dropdown, in this order (18 Nov). */
+  /** The labels each labelled list offers in its dropdown, in this order (18 Nov), with icon and colour (19 Nov). */
   labels: ContactLabels
+  /** How birthdays look in Calendar (19 Nov). */
+  birthday: BirthdayStyle
 }
 
 /** Settings key of the label lists. */
@@ -41,24 +43,40 @@ export const LABELS_KEY = 'labels'
 export const LABEL_LIMIT = 60
 export const LABEL_NAME_MAX = 60
 
-/** The labels a realm starts with: Family, Work and School first in every list, then the usual ones for that kind (18 Nov). */
+const label = (name: string, icon: string, color: string): ContactLabel => ({ name, icon, color })
+
+/** The labels a realm starts with: Family, Work and School first in every list, then the usual ones for that kind (18 Nov); each with an icon and a colour (19 Nov). */
 export const DEFAULT_CONTACT_LABELS: Readonly<ContactLabels> = {
-  phone: ['Family', 'Work', 'School', 'Mobile', 'Home', 'Main', 'Work mobile', 'Fax', 'Pager', 'Emergency', 'Other'],
-  email: ['Family', 'Work', 'School', 'Personal', 'Home', 'University', 'Billing', 'Other'],
-  place: ['Family', 'Work', 'School', 'Home', 'University', 'Vacation home', 'Billing', 'Shipping', 'Other'],
-  website: ['Family', 'Work', 'School', 'Personal', 'Blog', 'Portfolio', 'Company', 'Shop', 'Other']
+  phone: [label('Family', 'family', 'palette:pink'), label('Work', 'work', 'palette:blue'), label('School', 'school', 'palette:orange'), label('Mobile', 'mobile', 'palette:teal'), label('Home', 'home', 'palette:green'), label('Main', 'main', 'palette:gray'), label('Work mobile', 'mobile', 'palette:indigo'), label('Fax', 'fax', 'palette:gray'), label('Pager', 'pager', 'palette:gray'), label('Emergency', 'emergency', 'palette:red'), label('Other', 'other', 'palette:gray')],
+  email: [label('Family', 'family', 'palette:pink'), label('Work', 'work', 'palette:blue'), label('School', 'school', 'palette:orange'), label('Personal', 'personal', 'palette:purple'), label('Home', 'home', 'palette:green'), label('University', 'university', 'palette:amber'), label('Billing', 'billing', 'palette:gold'), label('Other', 'other', 'palette:gray')],
+  place: [label('Family', 'family', 'palette:pink'), label('Work', 'work', 'palette:blue'), label('School', 'school', 'palette:orange'), label('Home', 'home', 'palette:green'), label('University', 'university', 'palette:amber'), label('Vacation home', 'vacation', 'palette:cyan'), label('Billing', 'billing', 'palette:gold'), label('Shipping', 'shipping', 'palette:brown'), label('Other', 'other', 'palette:gray')],
+  website: [label('Family', 'family', 'palette:pink'), label('Work', 'work', 'palette:blue'), label('School', 'school', 'palette:orange'), label('Personal', 'personal', 'palette:purple'), label('Blog', 'blog', 'palette:magenta'), label('Portfolio', 'portfolio', 'palette:indigo'), label('Company', 'company', 'palette:navy'), label('Shop', 'shop', 'palette:coral'), label('Other', 'other', 'palette:gray')]
 }
 
-/** Trimmed, non-empty, case-insensitively unique labels. */
-export function normalizeLabelList(value: unknown): string[] {
+/** Settings key and default of the birthday look in Calendar. */
+export const BIRTHDAY_STYLE_KEY = 'birthdayStyle'
+export const DEFAULT_BIRTHDAY_STYLE: Readonly<BirthdayStyle> = { icon: 'cake', color: 'palette:rose' }
+
+const COLOR = /^(palette:[a-z0-9-]{1,40}|#[0-9a-fA-F]{6})$/
+const ICON = /^[^/\\.][^/\\]{0,80}$/
+const defaultStyle = (kind: ContactLabelKind, name: string): ContactLabel | undefined =>
+  DEFAULT_CONTACT_LABELS[kind].find((entry) => entry.name.toLowerCase() === name.toLowerCase())
+    ?? CONTACT_LABEL_KINDS.map((other) => DEFAULT_CONTACT_LABELS[other].find((entry) => entry.name.toLowerCase() === name.toLowerCase())).find(Boolean)
+
+/** Trimmed, non-empty, case-insensitively unique labels; a plain name saved before labels had a look takes the default look of that name. */
+export function normalizeLabelList(value: unknown, kind: ContactLabelKind = 'phone'): ContactLabel[] {
   if (!Array.isArray(value)) return []
   const seen = new Set<string>()
-  const out: string[] = []
+  const out: ContactLabel[] = []
   for (const raw of value) {
-    const label = typeof raw === 'string' ? raw.trim().slice(0, LABEL_NAME_MAX) : ''
-    if (!label || seen.has(label.toLowerCase())) continue
-    seen.add(label.toLowerCase())
-    out.push(label)
+    const entry = typeof raw === 'string' ? { name: raw } : raw && typeof raw === 'object' ? raw as Record<string, unknown> : null
+    const name = typeof entry?.name === 'string' ? entry.name.trim().slice(0, LABEL_NAME_MAX) : ''
+    if (!name || seen.has(name.toLowerCase())) continue
+    seen.add(name.toLowerCase())
+    const fallback = typeof raw === 'string' ? defaultStyle(kind, name) : undefined
+    const icon = typeof entry?.icon === 'string' && ICON.test(entry.icon.trim()) ? entry.icon.trim() : fallback?.icon
+    const color = typeof entry?.color === 'string' && COLOR.test(entry.color.trim()) ? entry.color.trim() : fallback?.color
+    out.push({ name, ...(icon ? { icon } : {}), ...(color ? { color } : {}) })
     if (out.length >= LABEL_LIMIT) break
   }
   return out
@@ -67,7 +85,22 @@ export function normalizeLabelList(value: unknown): string[] {
 /** The saved label lists; a list that was never saved shows the defaults. An emptied list stays empty. */
 export function normalizeContactLabels(value: unknown): ContactLabels {
   const saved = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
-  return Object.fromEntries(CONTACT_LABEL_KINDS.map((kind) => [kind, Array.isArray(saved[kind]) ? normalizeLabelList(saved[kind]) : [...DEFAULT_CONTACT_LABELS[kind]]])) as ContactLabels
+  return Object.fromEntries(CONTACT_LABEL_KINDS.map((kind) => [kind, Array.isArray(saved[kind]) ? normalizeLabelList(saved[kind], kind) : DEFAULT_CONTACT_LABELS[kind].map((entry) => ({ ...entry }))])) as ContactLabels
+}
+
+/** The saved birthday look, or the default. */
+export function normalizeBirthdayStyle(value: unknown): BirthdayStyle {
+  const saved = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+  return {
+    icon: typeof saved.icon === 'string' && ICON.test(saved.icon.trim()) ? saved.icon.trim() : DEFAULT_BIRTHDAY_STYLE.icon,
+    color: typeof saved.color === 'string' && COLOR.test(saved.color.trim()) ? saved.color.trim() : DEFAULT_BIRTHDAY_STYLE.color
+  }
+}
+
+/** The label entry a row's saved label names, regardless of case. */
+export function labelEntry(labels: ContactLabels, kind: ContactLabelKind, name: string | undefined): ContactLabel | undefined {
+  const key = (name ?? '').trim().toLowerCase()
+  return key ? labels[kind].find((entry) => entry.name.toLowerCase() === key) : undefined
 }
 
 export function normalizeGroupName(name: string): string {
@@ -106,7 +139,8 @@ export function getSettings(owner = api): ContactsSettings {
     groups: getContactGroups(owner),
     allGroups: getAllContactGroups(owner),
     socials: socials.length ? socials : defaultSocialLinks(),
-    labels: normalizeContactLabels(s[LABELS_KEY])
+    labels: normalizeContactLabels(s[LABELS_KEY]),
+    birthday: normalizeBirthdayStyle(s[BIRTHDAY_STYLE_KEY])
   }
 }
 
@@ -492,4 +526,12 @@ export function useContactLabels(owner = api): ContactLabels {
   const read = React.useCallback(() => JSON.stringify(normalizeContactLabels(owner.settings.get()[LABELS_KEY])), [owner])
   const json = React.useSyncExternalStore(React.useCallback((listener: () => void) => owner.settings.subscribe(listener), [owner]), read, read)
   return React.useMemo(() => JSON.parse(json) as ContactLabels, [json])
+}
+
+/** The birthday look, following Settings while a view shows it. */
+export function useBirthdayStyle(owner = api): BirthdayStyle {
+  const React = owner.React
+  const read = React.useCallback(() => JSON.stringify(normalizeBirthdayStyle(owner.settings.get()[BIRTHDAY_STYLE_KEY])), [owner])
+  const json = React.useSyncExternalStore(React.useCallback((listener: () => void) => owner.settings.subscribe(listener), [owner]), read, read)
+  return React.useMemo(() => JSON.parse(json) as BirthdayStyle, [json])
 }
