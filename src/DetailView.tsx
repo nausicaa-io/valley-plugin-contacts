@@ -260,6 +260,14 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
 
       {/* On a wide page the sections sit side by side; on a narrow one they stack (18 Nov). */}
       <div className="ct-detail-sections">
+      <FieldSection title={uiText('auto.b37456c4530b')} rows={[
+        ...contact.phone.map((m) => ({ icon: <Phone />, value: m.value, label: m.type, href: `tel:${m.value}`, link: { category: 'phone', value: m.value } })),
+        ...contact.email.map((m) => ({ icon: <Mail />, value: m.value, label: m.type, href: `mailto:${m.value}`, link: { category: 'email', value: m.value } })),
+        ...contact.place.map((m) => ({ icon: <MapPin />, value: m.value, label: m.type, onClick: () => openAddress(m.value) })),
+        ...contact.websites.map((w) => ({ icon: <Link />, value: w.value, label: w.type, href: w.value })),
+        ...(contact.birthdate ? [{ icon: <Cake />, value: formatContactBirthdate(contact.birthdate, dateFormat), label: 'birthday' }] : [])
+      ]} />
+
       {contact.relations.length > 0 && (
         <div className="ct-section">
           <div className="ct-section-title">{uiText('auto.6519fe11ef74')}</div>
@@ -284,14 +292,6 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
           })}
         </div>
       )}
-
-      <FieldSection title={uiText('auto.b37456c4530b')} rows={[
-        ...contact.phone.map((m) => ({ icon: <Phone />, value: m.value, label: m.type, href: `tel:${m.value}`, link: { category: 'phone', value: m.value } })),
-        ...contact.email.map((m) => ({ icon: <Mail />, value: m.value, label: m.type, href: `mailto:${m.value}`, link: { category: 'email', value: m.value } })),
-        ...contact.place.map((m) => ({ icon: <MapPin />, value: m.value, label: m.type, onClick: () => openAddress(m.value) })),
-        ...contact.websites.map((w) => ({ icon: <Link />, value: w.value, label: w.type, href: w.value })),
-        ...(contact.birthdate ? [{ icon: <Cake />, value: formatContactBirthdate(contact.birthdate, dateFormat), label: 'birthday' }] : [])
-      ]} />
 
       <FieldSection title={uiText('auto.41a575086b73')} rows={contact.socialMedia.map((s) => {
         const resolved = resolveSocial(s, socialLinks)
