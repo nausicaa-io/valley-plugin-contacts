@@ -10,6 +10,7 @@ import { getStore } from './store'
 import { uiText } from './localization'
 import { setContactMode } from './contactView'
 import { getSettings } from './data'
+import { contactIconSvg, subscribeContactIcons } from './contactIcons'
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -29,7 +30,12 @@ function birthdayParts(value: string): { year?: number; month: number; day: numb
 const pad = (value: number): string => String(value).padStart(2, '0')
 
 /** Every birthday occurrence inside an inclusive `YYYY-MM-DD` range, sorted. */
-export function birthdayItems(contacts: readonly Contact[], startDate: string, endDate: string, color?: string): CalendarSourceItem[] {
+/** The birthday icon from Settings → Contacts as an SVG data URI Calendar draws (23 Nov), or `cake` until the icon folder is read. */
+export function birthdayIcon(svg: string | undefined): string {
+  return svg ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` : 'cake'
+}
+
+export function birthdayItems(contacts: readonly Contact[], startDate: string, endDate: string, color?: string, icon = 'cake'): CalendarSourceItem[] {
   if (!ISO_DATE.test(startDate) || !ISO_DATE.test(endDate) || startDate > endDate) return []
   const firstYear = Number(startDate.slice(0, 4))
   const lastYear = Number(endDate.slice(0, 4))
@@ -49,7 +55,7 @@ export function birthdayItems(contacts: readonly Contact[], startDate: string, e
         title: uiText('contacts.calendar.birthday', { p0: contact.displayName }),
         date,
         filePath: contact.relPath,
-        icon: 'cake',
+        icon,
         // The birthday's colour from Settings → Contacts → Labels (19 Nov).
         ...(color ? { color } : {}),
         readOnly: true,
@@ -92,7 +98,8 @@ export function registerBirthdaySource(api: ValleyPluginApi): () => void {
         if (previous.startDate !== startDate || previous.endDate !== endDate || previous.limit !== limit || previous.revision !== currentRevision() || typeof previous.offset !== 'number') throw new Error('Calendar source cursor is stale or belongs to another range.')
         offset = previous.offset
       }
-      const all = birthdayItems(store.getSnapshot().contacts, startDate, endDate, getSettings(api).birthday.color)
+      const style = getSettings(api).birthday
+      const all = birthdayItems(store.getSnapshot().contacts, startDate, endDate, style.color, birthdayIcon(contactIconSvg(style.icon, 'birthday', api)))
       const items = all.slice(offset, offset + limit)
       const next = offset + items.length
       const published = currentRevision()
@@ -121,7 +128,8 @@ export function registerBirthdaySource(api: ValleyPluginApi): () => void {
     configure: () => api.workspace.openOwnSettings()
   }
   const refresh = (): void => {
-    const next = JSON.stringify([getSettings(api).birthday, store.getSnapshot().contacts.filter((contact) => contact.birthdate).map((contact) => [contact.relPath, contact.displayName, contact.birthdate, contact.groups[0] ?? ''])])
+    const style = getSettings(api).birthday
+    const next = JSON.stringify([style, contactIconSvg(style.icon, 'birthday', api) ?? '', store.getSnapshot().contacts.filter((contact) => contact.birthdate).map((contact) => [contact.relPath, contact.displayName, contact.birthdate, contact.groups[0] ?? ''])])
     if (next === signature) return
     signature = next
     revision++
@@ -130,12 +138,14 @@ export function registerBirthdaySource(api: ValleyPluginApi): () => void {
   refresh()
   const offStore = store.subscribe(refresh)
   const offSettings = api.settings.subscribe(refresh)
+  const offIcons = subscribeContactIcons(refresh, api)
   const offLanguage = api.ui.onLanguageChanged(() => { revision++; api.interop.state.publish(CALENDAR_ITEM_SOURCE_REVISION_V1, revision) })
   const offSource = api.interop.services.provide(CALENDAR_ITEM_SOURCE_V2, source)
   return () => {
     active = false
     offStore()
     offSettings()
+    offIcons()
     offLanguage()
     offSource()
     api.interop.state.publish(CALENDAR_ITEM_SOURCE_REVISION_V1, null)
