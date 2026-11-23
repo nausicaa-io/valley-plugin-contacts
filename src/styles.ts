@@ -134,22 +134,6 @@ const CSS = `
   background:none; color:var(--text-tertiary); font-size:var(--smaller-font-size, 0.75rem); font-weight:var(--font-medium, 500); cursor:pointer; }
 .ct-chip-add svg { width:11px; height:11px; }
 .ct-chip-add:hover { color:var(--text-color); }
-.ct-chip-picker { position:relative; display:inline-flex; align-items:center; z-index:3; }
-.ct-chip-input { height:22px; padding:2px 10px; border-radius:999px; border:1px solid var(--accent-color);
-  background:var(--surface-color-alt); color:var(--text-color); font-size:0.71875rem; outline:none; width:150px;
-  box-shadow:0 0 0 2px color-mix(in srgb, var(--accent-color) 13%, transparent); }
-.ct-chip-popover { position:absolute; left:0; top:calc(100% + 6px); min-width:210px; max-width:min(280px, 70vw);
-  display:flex; flex-direction:column; gap:2px; padding:5px; border-radius:8px;
-  border:1px solid var(--border-light); background:var(--surface-color-alt);
-  box-shadow:0 12px 30px rgba(0,0,0,.16); color:var(--text-color); }
-.ct-chip-option { display:flex; align-items:center; gap:8px; width:100%; min-height:28px; padding:5px 8px;
-  border:none; border-radius:6px; background:none; color:var(--text-secondary); font-size:0.75rem; text-align:left;
-  cursor:pointer; }
-.ct-chip-option:hover, .ct-chip-option.active { background:var(--accent-tint-bg); color:var(--accent-color); }
-.ct-chip-option-dot { width:9px; height:9px; border-radius:50%; flex:0 0 auto; }
-.ct-chip-option-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.ct-chip-option.create svg { width:13px; height:13px; flex:0 0 auto; }
-.ct-chip-empty { padding:8px 9px; color:var(--text-tertiary); font-size:0.75rem; }
 
 .ct-section { margin-bottom:24px; }
 .ct-section-title { font-size:0.6875rem; font-weight:650; text-transform:uppercase; letter-spacing:.04em;

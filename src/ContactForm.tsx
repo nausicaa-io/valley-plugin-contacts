@@ -18,6 +18,7 @@ import { dateFormatPlaceholder, formatContactDate, initials, parseContactDateInp
 import { assetUrlForRelPath } from '@valley/plugin-sdk/fileTypes'
 import { PhotoField } from './PhotoEditor'
 import { getContactGroups } from './groups'
+import { GroupMenuButton } from './groupMenu'
 import { uiText } from './localization'
 import { useContactFileActions, type ContactFileActionContext } from './fileViewCommands'
 
@@ -380,7 +381,6 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
   const [cover, setCover] = useContactField(api, draftKey, 'cover', base.cover, editorId)
   const [photo, setPhoto] = useContactField(api, draftKey, 'photo', base.photo, editorId)
   const [groups, setGroups] = useContactField(api, draftKey, 'groups', base.groups, editorId)
-  const [groupDraft, setGroupDraft] = React.useState('')
   const [dragIndex, setDragIndex] = React.useState<number | null>(null)
   const [phone, setPhone] = useContactField<ContactMethod[]>(api, draftKey, 'phone', base.phone, editorId)
   const [email, setEmail] = useContactField<ContactMethod[]>(api, draftKey, 'email', base.email, editorId)
@@ -481,13 +481,6 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
     return { '--ct-group-color': paletteCssValue(groupColorFor(group, snap.groupConfigs)) } as CSSProperties
   }
 
-  const addGroup = (): void => {
-    const key = normalizeGroupName(groupDraft)
-    const next = knownGroups.find((group) => normalizeGroupName(group) === key)
-    setGroupDraft('')
-    if (!next || groups.some((group) => normalizeGroupName(group) === key)) return
-    setGroups([...groups, next])
-  }
 
   const moveGroup = (from: number, to: number): void => {
     if (from === to || from < 0 || to < 0 || from >= groups.length || to >= groups.length) return
@@ -717,16 +710,7 @@ export function ContactForm({ contact, mountedView, autosave = false, compact = 
               ))}
             </div>
             <div className="ct-group-add">
-              <ComboField
-                className="ct-input"
-                value={groupDraft}
-                placeholder={uiText('auto.c33f059b0ca7')}
-                ariaLabel={uiText('auto.c33f059b0ca7')}
-                onChange={setGroupDraft}
-                options={knownGroups.map((g) => ({ value: g, label: g }))}
-                allowCustom={false}
-              />
-              <button className="ct-rep-add" onClick={addGroup}><Plus /> {uiText('auto.2fca464f9c89')}</button>
+              <GroupMenuButton selected={groups} onChange={setGroups} />
               <button className="ct-rep-add" onClick={() => api.workspace.openSettings('plugin:contacts#groups')}>
                 {uiText('settings.section.groups')}
               </button>

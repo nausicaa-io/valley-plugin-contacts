@@ -19,17 +19,18 @@ import { cardRealm, contactAt } from './cards'
 function setup(
   groups: string[],
   birthdate = '',
-  place: Array<{ value: string; type?: string }> = []
+  place: Array<{ value: string; type?: string }> = [],
+  sharedGroups: Array<{ id: string; name: string; color: string; parent?: string }> = [
+    { id: 'fungi', name: 'fungi', color: '#a855f7' },
+    { id: 'plants', name: 'plants', color: '#eab308' }
+  ]
 ): { mock: ReturnType<typeof createMockValleyApi>; contact: Contact } {
   const fields = { firstName: 'Fern', lastName: 'Canopy', groups, birthdate, place, note: 'Original note' }
   const contact = contactAt('Plants/Fern Canopy.vcf', fields)
   const mock = createMockValleyApi({
     manifest: { id: 'contacts' },
     realm: { path: '/mock/realm', name: 'mock', displayName: 'mock' },
-    groups: [
-      { id: 'fungi', name: 'fungi', color: '#a855f7' },
-      { id: 'plants', name: 'plants', color: '#eab308' }
-    ],
+    groups: sharedGroups,
     settings: {
       contactsRoot: 'Plants',
       lastOpen: { selectedPath: contact.relPath, mode: 'detail' }
@@ -85,42 +86,58 @@ describe('DetailView group chips', () => {
     expect(within(container.querySelector('.ct-chips') as HTMLElement).queryByRole('button', { name: /edit/i })).toBeNull()
   })
 
-  it('adds a group and preserves the notes', async () => {
+  /** Click `+ Group` and return the menu items the page hands to the host menu. */
+  async function openGroupMenu(mock: ReturnType<typeof createMockValleyApi>): Promise<UiMenuItem[]> {
+    const openMenu = vi.spyOn(mock.api.ui, 'openMenu').mockResolvedValue(undefined as never)
+    fireEvent.click(screen.getByText('Group').closest('button')!)
+    await waitFor(() => expect(openMenu).toHaveBeenCalled())
+    return openMenu.mock.calls[0][0] as UiMenuItem[]
+  }
+
+  it('adds a group from the Calendar-style group menu and preserves the notes', async () => {
     const { mock, contact } = setup(['fungi'])
     await getStore(mock.api).ready()
     render(React.createElement(DetailView, { contact }))
     await screen.findByText('Original note')
 
-    fireEvent.click(screen.getByText('Group').closest('button')!)
-    fireEvent.change(screen.getByPlaceholderText('Search group'), { target: { value: 'Plants' } })
-    fireEvent.keyDown(screen.getByPlaceholderText('Search group'), { key: 'Enter' })
+    const items = await openGroupMenu(mock)
+    expect(items.map((item) => [item.label, item.checked])).toEqual([['No group', false], ['fungi', true], ['plants', false]])
+    act(() => items.find((item) => item.label === 'plants')!.onSelect!())
 
     await waitFor(() => expect(lastSavedContent(mock)).toContain('CATEGORIES:fungi,plants'))
     expect(lastSavedContent(mock)).toContain('NOTE:Original note')
   })
 
-  it('uses the inline group picker instead of the browser datalist', async () => {
-    const { contact } = setup(['fungi'])
-    const { container } = render(React.createElement(DetailView, { contact }))
-    await screen.findByText('Original note')
-
-    fireEvent.click(screen.getByText('Group').closest('button')!)
-    fireEvent.change(screen.getByPlaceholderText('Search group'), { target: { value: 'pla' } })
-
-    expect(container.querySelector('datalist')).toBeNull()
-    expect(container.querySelector('.ct-chip-popover')).toBeTruthy()
-    expect(within(container.querySelector('.ct-chip-popover') as HTMLElement).getByText('plants')).toBeTruthy()
-  })
-
-  it('routes group management to the central Settings page', async () => {
-    const { mock, contact } = setup(['fungi'])
+  it('removes a checked group and clears every group with No group', async () => {
+    const { mock, contact } = setup(['fungi', 'plants'])
     await getStore(mock.api).ready()
     render(React.createElement(DetailView, { contact }))
     await screen.findByText('Original note')
 
-    fireEvent.click(screen.getByText('Group').closest('button')!)
-    fireEvent.mouseDown(screen.getByText('Groups'))
-    expect(mock.api.workspace.openSettings).toHaveBeenCalledWith('plugin:contacts#groups')
+    const first = await openGroupMenu(mock)
+    await act(async () => { first.find((item) => item.label === 'fungi')!.onSelect!() })
+    await waitFor(() => expect(lastSavedContent(mock)).toContain('CATEGORIES:plants'))
+    await waitFor(() => expect(screen.getByText('Group').closest('button')!.disabled).toBe(false))
+    vi.restoreAllMocks()
+    const second = await openGroupMenu(mock)
+    expect(second[0].checked).toBe(false)
+    await act(async () => { second[0].onSelect!() })
+    await waitFor(() => expect(lastSavedContent(mock)).not.toContain('CATEGORIES'))
+  })
+
+  it('opens subgroups as a submenu of their group', async () => {
+    const { mock, contact } = setup(['fungi'], '', [], [
+      { id: 'fungi', name: 'fungi', color: '#a855f7' },
+      { id: 'plants', name: 'plants', color: '#eab308' },
+      { id: 'mosses', name: 'mosses', color: '#22c55e', parent: 'plants' }
+    ])
+    await getStore(mock.api).ready()
+    render(React.createElement(DetailView, { contact }))
+    await screen.findByText('Original note')
+
+    const items = await openGroupMenu(mock)
+    expect(items.map((item) => item.label)).toEqual(['No group', 'fungi', 'plants'])
+    expect(items[2].submenu?.map((item) => item.label)).toEqual(['mosses'])
   })
 
   it('removes a group and preserves remaining groups', async () => {

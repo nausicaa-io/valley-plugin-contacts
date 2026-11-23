@@ -1,5 +1,5 @@
 import { useContactIcons } from './contactIcons'
-import type { CSSProperties, KeyboardEvent, ReactElement } from 'react'
+import type { CSSProperties, ReactElement } from 'react'
 import { assetUrlForRelPath } from '@valley/plugin-sdk/fileTypes'
 import { React, api } from './runtime'
 import type { Contact } from './types'
@@ -12,6 +12,7 @@ import { resolveSocial } from './social'
 import { Building, Cake, Link, Mail, MapPin, Phone, Plus, X } from './icons'
 import { uiText } from './localization'
 import { getContactGroups } from './groups'
+import { GroupMenuButton } from './groupMenu'
 import type { LinkTarget, MountedPluginView } from '@valley/plugin-sdk'
 import type { TextDocumentRead } from '@valley/plugin-sdk/types'
 import { readContactDocument } from './data'
@@ -33,12 +34,8 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
   useContactIcons()
   const store = getStore(api)
   const snap = store.getSnapshot()
-  const [addingChip, setAddingChip] = React.useState(false)
-  const [chipValue, setChipValue] = React.useState('')
   const [groups, setGroups] = React.useState(contact.groups)
   const [savingGroups, setSavingGroups] = React.useState(false)
-  const [highlightedGroup, setHighlightedGroup] = React.useState(0)
-  const pickerRef = React.useRef<HTMLSpanElement | null>(null)
   const saveSeqRef = React.useRef(0)
   const contactGroupsKey = JSON.stringify(contact.groups)
   const avatar = avatarSource(contact, snap.coverPaths[contact.relPath])
@@ -57,25 +54,8 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
     liveReading.current.groups = JSON.parse(contactGroupsKey)
     liveReading.current.savingGroups = false
     setGroups(JSON.parse(contactGroupsKey))
-    setAddingChip(false)
-    setChipValue('')
-    setHighlightedGroup(0)
     setSavingGroups(false)
   }, [contact.relPath, contactGroupsKey])
-
-  React.useEffect(() => {
-    if (!addingChip) return
-    const closePicker = (event: MouseEvent): void => {
-      const target = event.target
-      if (target && pickerRef.current?.contains(target as Node)) return
-      setAddingChip(false)
-      setChipValue('')
-      setHighlightedGroup(0)
-    }
-    const document = pickerRef.current?.ownerDocument
-    document?.addEventListener('mousedown', closePicker)
-    return () => document?.removeEventListener('mousedown', closePicker)
-  }, [addingChip])
 
   const groupLabel = (group: string): string => {
     const parent = parentGroupName(group, snap.groupConfigs)
@@ -110,28 +90,9 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
     void persistGroups(groups.filter((g) => normalizeGroupName(g) !== key))
   }
 
-  const closeAddGroup = (): void => {
-    setAddingChip(false)
-    setChipValue('')
-    setHighlightedGroup(0)
-  }
-
-  const commitGroup = (rawGroup: string): void => {
-    const key = normalizeGroupName(rawGroup)
-    const next = knownGroups.find((group) => normalizeGroupName(group) === key)
-    closeAddGroup()
-    if (!next || groups.some((group) => normalizeGroupName(group) === key)) return
-    void persistGroups([...groups, next])
-  }
-
   const currentGroups = new Set(groups.map((g) => normalizeGroupName(g)))
   const knownGroups = allGroups(getContactGroups(api))
     .filter((g) => !currentGroups.has(normalizeGroupName(g)))
-  const groupQuery = normalizeGroupName(chipValue)
-  const suggestedGroups = knownGroups
-    .filter((g) => !groupQuery || normalizeGroupName(g).includes(groupQuery))
-    .slice(0, 7)
-  const optionCount = suggestedGroups.length
   const relatedPath = (index: number): string | undefined => { const relation = contact.relations[index]; return relation ? resolveRelation(relation.to, store.getSnapshot().contacts)?.relPath : undefined }
   useContactFileActions(mountedView, 'reader', {
     snapshot: () => ({ groups: liveReading.current.groups, savingGroups: liveReading.current.savingGroups, phone: contact.phone, email: contact.email, place: contact.place, websites: contact.websites, social: contact.socialMedia, relations: contact.relations, documentRevision: liveReading.current.documentRevision?.revisionToken ?? null }),
@@ -154,33 +115,6 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
       'link-open': action => { const path = action.type === 'link-open' && action.kind === 'relation' ? relatedPath(action.index) : undefined; return path ? [{ kind: 'file', path, fileOperation: 'read' }] : [] }
     }
   })
-
-  React.useEffect(() => {
-    setHighlightedGroup(0)
-  }, [chipValue, addingChip])
-
-  const onGroupInputKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      closeAddGroup()
-      return
-    }
-    if (event.key === 'ArrowDown' && optionCount > 0) {
-      event.preventDefault()
-      setHighlightedGroup((highlightedGroup + 1) % optionCount)
-      return
-    }
-    if (event.key === 'ArrowUp' && optionCount > 0) {
-      event.preventDefault()
-      setHighlightedGroup((highlightedGroup - 1 + optionCount) % optionCount)
-      return
-    }
-    if (event.key === 'Enter') {
-      event.preventDefault()
-      const selectedSuggestion = suggestedGroups[highlightedGroup]
-      if (selectedSuggestion) commitGroup(selectedSuggestion)
-    }
-  }
 
   return (
     <div className="ct-detail">
@@ -211,51 +145,7 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
             <button onClick={() => removeGroup(group)} title={uiText('auto.9a5319bc9fe3')} aria-label={uiText('auto.9a5319bc9fe3')}><X /></button>
           </span>
         ))}
-        {addingChip ? (
-          <span className="ct-chip-picker" ref={pickerRef}>
-            <input
-              className="ct-chip-input"
-              autoFocus
-              value={chipValue}
-              placeholder={uiText('auto.d747c072f6c5')}
-              onChange={(e) => setChipValue((e.target as HTMLInputElement).value)}
-              onKeyDown={onGroupInputKeyDown}
-            />
-            <span className="ct-chip-popover" role="listbox" data-plugin-widget-occluder="">
-              {suggestedGroups.map((group, i) => (
-                <button
-                  key={group}
-                  className={`ct-chip-option${i === highlightedGroup ? ' active' : ''}`}
-                  onMouseDown={(e) => {
-                    e.preventDefault()
-                    commitGroup(group)
-                  }}
-                  role="option"
-                  aria-selected={i === highlightedGroup}
-                >
-                  <span className="ct-chip-option-dot" style={{ background: paletteCssValue(groupColorFor(group, snap.groupConfigs)) }} />
-                  <span className="ct-chip-option-label">{group}</span>
-                </button>
-              ))}
-              {optionCount === 0 && <span className="ct-chip-empty">{uiText('auto.115fe0fac776')}</span>}
-              <button
-                className="ct-chip-option create"
-                onMouseDown={(event) => {
-                  event.preventDefault()
-                  closeAddGroup()
-                  api.workspace.openSettings('plugin:contacts#groups')
-                }}
-                role="option"
-                aria-selected={false}
-              >
-                <Plus />
-                <span className="ct-chip-option-label">{uiText('contacts.settings.section.groups')}</span>
-              </button>
-            </span>
-          </span>
-        ) : (
-          <button className="ct-chip-add" onClick={() => setAddingChip(true)}><Plus /> {uiText('auto.171a0606f7c7')}</button>
-        )}
+        <GroupMenuButton selected={groups} disabled={savingGroups} onChange={(next) => { void persistGroups(next) }} />
       </div>
 
       {/* On a wide page the sections sit side by side; on a narrow one they stack (18 Nov). */}
