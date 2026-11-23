@@ -293,6 +293,14 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
         </div>
       )}
 
+      {contact.organization.length > 0 && (
+        <FieldSection title={uiText('auto.519255ae1f74')} rows={contact.organization.map((o) => ({
+          icon: <Building />,
+          value: o.name || '',
+          label: [o.title, o.dept].filter(Boolean).join(' · ') || undefined
+        }))} />
+      )}
+
       <FieldSection title={uiText('auto.41a575086b73')} rows={contact.socialMedia.map((s) => {
         const resolved = resolveSocial(s, socialLinks)
         const Icon = resolved.icon
@@ -303,14 +311,6 @@ export function DetailView({ contact, mountedView }: { contact: Contact; mounted
           href: resolved.href ?? undefined
         }
       })} />
-
-      {contact.organization.length > 0 && (
-        <FieldSection title={uiText('auto.519255ae1f74')} rows={contact.organization.map((o) => ({
-          icon: <Building />,
-          value: o.name || '',
-          label: [o.title, o.dept].filter(Boolean).join(' · ') || undefined
-        }))} />
-      )}
       </div>
 
       <div className="ct-section ct-detail-notes">
